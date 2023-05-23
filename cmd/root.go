@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/lib/pq"
+	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -36,7 +38,24 @@ var rootCmd = &cobra.Command{
 }
 
 func mysql2pg() {
+	// 创建运行日志目录
+	logDir, _ := filepath.Abs(CreateDateDir(""))
+	// 输出调用文件以及方法位置
+	log.SetReportCaller(true)
+	f, err := os.OpenFile(logDir+"/"+"run.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Fatal(err) // 或设置到函数返回值中
+		}
+	}()
+	// log信息重定向到平面文件
+	multiWriter := io.MultiWriter(os.Stdout, f)
+	log.SetOutput(multiWriter)
 	start := time.Now()
+	// map结构，表名以及查询语句
 	var tableMap map[string][]string
 	log.Info("检查Mysql连接")
 	PrepareSrc()
@@ -99,7 +118,7 @@ func mysql2pg() {
 	//wg.Wait()
 	cost := time.Since(start)
 
-	log.Info(fmt.Sprintf("执行完成，耗时%s", cost))
+	log.Info(fmt.Sprintf("执行完成，耗时%s，运行日志请查看%s", cost, logDir))
 }
 
 // 自动对表分析，然后生成每个表用来迁移查询源库SQL的集合(全表查询或者分页查询)
@@ -410,4 +429,18 @@ func initConfig() {
 		log.Info("Using config file:", viper.ConfigFileUsed())
 	}
 	log.Info("Using selfromyml:", selFromYml)
+}
+
+// CreateDateDir 根据当前日期来创建文件夹
+func CreateDateDir(basePath string) string {
+	folderName := time.Now().Format("2006_01_02_15_04_05")
+	folderPath := filepath.Join(basePath, folderName)
+	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
+		// 必须分成两步
+		// 先创建文件夹
+		os.Mkdir(folderPath, 0777)
+		// 再修改权限
+		os.Chmod(folderPath, 0777)
+	}
+	return folderPath
 }

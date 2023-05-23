@@ -1,0 +1,17 @@
+src:
+  host: 192.168.1.3
+  database: test
+  username: root
+  password: 11111
+dest:
+  host: 192.168.1.200
+  database: test
+  username: test
+  password: 11111
+pageSize: 10000
+maxRows: 10000
+tables:
+  test1:
+    - select * from test1
+  test2:
+    - select * from test2

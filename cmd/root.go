@@ -57,19 +57,20 @@ func mysql2pg() {
 	start := time.Now()
 	// map结构，表名以及查询语句
 	var tableMap map[string][]string
-	log.Info("检查Mysql连接")
+	excludeTab := viper.GetStringSlice("exclude")
+	log.Info("正则检查Mysql连接")
 	PrepareSrc()
 	defer srcDb.Close()
 	// 每页的分页记录数,仅全库迁移时有效
 	pageSize := viper.GetInt("pageSize")
-	log.Info("检查Postgres连接")
+	log.Info("正在检查Postgres连接")
 	PrepareDest()
 	defer destDb.Close()
 	// 在迁移前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成分页查询切片，没有主键的统一是全表查询sql)
 	if selFromYml {
 		tableMap = viper.GetStringMapStringSlice("tables")
 	} else {
-		tableMap = fetchTableMap(pageSize)
+		tableMap = fetchTableMap(pageSize, excludeTab)
 	}
 	// 打印出map集合里每个表以及表分页查询
 	//for tableName,sqlstr := range tableMap{
@@ -122,11 +123,27 @@ func mysql2pg() {
 }
 
 // 自动对表分析，然后生成每个表用来迁移查询源库SQL的集合(全表查询或者分页查询)
+// 自动分析是否有排除的表名
 // 最后返回map结构即 表:[查询SQL]
-func fetchTableMap(pageSize int) (tableMap map[string][]string) {
+func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]string) {
 	var tableNumber int // 表总数
+	var sqlStr string   // 查询源库获取要迁移的表名
+	// 如果配置文件中exclude存在表名，使用not in排除掉这些表，否则获取到所有表名
+	if excludeTable != nil {
+		sqlStr = "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE' and table_name not in ("
+		buffer := bytes.NewBufferString("")
+		for index, tabName := range excludeTable {
+			if index < len(excludeTable)-1 {
+				buffer.WriteString("'" + tabName + "'" + ",")
+			} else {
+				buffer.WriteString("'" + tabName + "'" + ")")
+			}
+		}
+		sqlStr += buffer.String()
+	} else {
+		sqlStr = "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE';" // 获取库里全表名称
+	}
 	// 查询下源库总共的表，获取到表名
-	sqlStr := "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE';" // 获取库里全表名称
 	rows, err := srcDb.Query(sqlStr)
 	defer rows.Close()
 	if err != nil {
@@ -427,6 +444,8 @@ func initConfig() {
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		log.Info("Using config file:", viper.ConfigFileUsed())
+	} else {
+		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
 	}
 	log.Info("Using selfromyml:", selFromYml)
 }

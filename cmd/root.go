@@ -58,7 +58,7 @@ func mysql2pg() {
 	// map结构，表名以及查询语句
 	var tableMap map[string][]string
 	excludeTab := viper.GetStringSlice("exclude")
-	log.Info("正则检查Mysql连接")
+	log.Info("正在检查Mysql连接")
 	PrepareSrc()
 	defer srcDb.Close()
 	// 每页的分页记录数,仅全库迁移时有效
@@ -181,9 +181,9 @@ func preMigdata(tableName string, sqlFullSplit []string) (dbCol []string, dbColT
 		return // 表不存在接直接return
 	}
 	// 获取表的字段名以及类型
-	// 如果指定了参数selfromyml，就读取yml文件中配置的sql，否则按照select * 查全表获取
+	// 如果指定了参数selfromyml，就读取yml文件中配置的sql获取"自定义查询sql生成的列名"，否则按照select * 查全表获取
 	if selFromYml {
-		sqlCol = sqlFullSplit[0]
+		sqlCol = "select * from (" + sqlFullSplit[0] + " )aa where 1=0;" // 在自定义sql外层套一个select * from (自定义sql) where 1=0
 	} else {
 		sqlCol = "select * from " + tableName + " where 1=0;"
 	}
@@ -332,6 +332,10 @@ func runMigration(startPage int, tableName string, sqlStr string, ch chan int, c
 			return // 如果prepare异常就return
 		}
 	}
+	err = rows.Close()
+	if err != nil {
+		return
+	}
 	_, err = stmt.Exec() //把所有的buffer进行flush，一次性写入数据
 	if err != nil {
 		log.Error("prepareValues Error: ", prepareValues, err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
@@ -360,7 +364,8 @@ func PrepareSrc() {
 	srcUserName := viper.GetString("src.username")
 	srcPassword := viper.GetString("src.password")
 	srcDatabase := viper.GetString("src.database")
-	srcConn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8&maxAllowedPacket=0", srcUserName, srcPassword, srcHost, srcDatabase)
+	srcPort := viper.GetInt("src.port")
+	srcConn := fmt.Sprintf("%s:%s@tcp(%s:%v)/%s?charset=utf8&maxAllowedPacket=0", srcUserName, srcPassword, srcHost, srcPort, srcDatabase)
 	var err error
 	srcDb, err = sql.Open("mysql", srcConn)
 	if err != nil {
@@ -368,7 +373,7 @@ func PrepareSrc() {
 	}
 	c := srcDb.Ping()
 	if c != nil {
-		log.Fatal("连接Mysql失败", err)
+		log.Fatal("连接Mysql失败", c)
 	}
 	srcDb.SetConnMaxLifetime(2 * time.Hour)
 	srcDb.SetMaxIdleConns(0)
@@ -379,12 +384,12 @@ func PrepareSrc() {
 func PrepareDest() {
 	// 生成目标库连接
 	destHost := viper.GetString("dest.host")
+	destPort := viper.GetInt("dest.port")
 	destUserName := viper.GetString("dest.username")
 	destPassword := viper.GetString("dest.password")
 	destDatabase := viper.GetString("dest.database")
-
-	conn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=disable", destHost,
-		destUserName, destPassword, destDatabase)
+	conn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%v sslmode=disable", destHost,
+		destUserName, destPassword, destDatabase, destPort)
 	var err error
 	destDb, err = sql.Open("postgres", conn)
 	if err != nil {
@@ -392,7 +397,7 @@ func PrepareDest() {
 	}
 	c := destDb.Ping()
 	if c != nil {
-		log.Fatal("连接Postgres失败", err)
+		log.Fatal("连接Postgres失败", c)
 	}
 	log.Info("连接Postgres成功")
 }

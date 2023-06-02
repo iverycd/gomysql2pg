@@ -1,8 +1,21 @@
 # gomysql2pg
+
 ## change history
+
+### v0.0.3
+
+2023-06-02
+
+1 config文件增加端口设定
+
+2 自定义sql外面包了一层select * from (自定义sql) where 1=0 用于获取列字段，避免查询全表数据
+
+3 在copy方法的exec刷buffer之前，再一次主动使用row.close关闭数据库连接
+
 ### v0.0.2
 2023-05-24
-增加排除表参数，以及config yml文件配置异常检查
+1 增加排除表参数，以及config yml文件配置异常检查
+
 ### v0.0.1
 2023-05-23
 log方法打印调用文件以及方法源行数，增加日志重定向到平面文件

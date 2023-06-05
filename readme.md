@@ -2,22 +2,24 @@
 
 ## change history
 
-### v0.0.3
+### v0.0.4
+2023-06-05
 
+在遇到Ctrl+c输入后主动关闭数据库正在运行的sql,输出格式简化,转储迁移失败的表数据到日志目录
+
+### v0.0.3
 2023-06-02
 
-1 config文件增加端口设定
-
-2 自定义sql外面包了一层select * from (自定义sql) where 1=0 用于获取列字段，避免查询全表数据
-
-3 在copy方法的exec刷buffer之前，再一次主动使用row.close关闭数据库连接
+config文件增加端口设定,自定义sql外面包了一层select * from (自定义sql) where 1=0 用于获取列字段，避免查询全表数据,在copy方法的exec刷buffer之前，再一次主动使用row.close关闭数据库连接
 
 ### v0.0.2
 2023-05-24
-1 增加排除表参数，以及config yml文件配置异常检查
+
+增加排除表参数，以及config yml文件配置异常检查
 
 ### v0.0.1
 2023-05-23
+
 log方法打印调用文件以及方法源行数，增加日志重定向到平面文件
 
 ## 一、简介
@@ -45,6 +47,7 @@ tables:  # 要迁移的表名，按顺序列出
     - select * from test1  # 查询源表的SQL语句
   test2:
     - select * from test2
+exclude:
 ```
 
 ### 2.2 迁移模式指定
@@ -60,9 +63,9 @@ go run ./main.go  --config example.yml
 
 模式2 自定义SQL查询迁移
 
-go run ./main.go  --config 配置文件 --selfromyml
+go run ./main.go  --config 配置文件 -s
 
 不迁移全表数据，只根据配置文件中自定义查询语句迁移数据到目标库
 ```
-go run ./main.go  --config example.yml --selfromyml
+go run ./main.go  --config example.yml -s
 ```

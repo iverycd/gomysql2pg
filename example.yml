@@ -18,4 +18,6 @@ tables:
   test2:
     - select * from test2
 exclude:
-  operalog
+  operalog1
+  operalog2
+  operalog3

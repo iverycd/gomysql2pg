@@ -1,15 +1,19 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/lib/pq"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -38,6 +42,10 @@ var rootCmd = &cobra.Command{
 }
 
 func mysql2pg() {
+	// 自动侦测终端是否输入Ctrl+c，若按下主动关闭数据库查询
+	exitChan := make(chan os.Signal)
+	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
+	go exitHandle(exitChan)
 	// 创建运行日志目录
 	logDir, _ := filepath.Abs(CreateDateDir(""))
 	// 输出调用文件以及方法位置
@@ -58,12 +66,12 @@ func mysql2pg() {
 	// map结构，表名以及查询语句
 	var tableMap map[string][]string
 	excludeTab := viper.GetStringSlice("exclude")
-	log.Info("正在检查Mysql连接")
+	log.Info("running MySQL check connect")
 	PrepareSrc()
 	defer srcDb.Close()
 	// 每页的分页记录数,仅全库迁移时有效
 	pageSize := viper.GetInt("pageSize")
-	log.Info("正在检查Postgres连接")
+	log.Info("running Postgres check connect")
 	PrepareDest()
 	defer destDb.Close()
 	// 在迁移前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成分页查询切片，没有主键的统一是全表查询sql)
@@ -92,7 +100,7 @@ func mysql2pg() {
 		colName, colType := preMigdata(tableName, sqlFullSplit) //获取单表的列名，列字段类型
 		// 遍历该表的sql切片(多个分页查询或者全表查询sql)
 		for index, sqlSplitSql := range sqlFullSplit {
-			go runMigration(index, tableName, sqlSplitSql, ch, colName, colType)
+			go runMigration(logDir, index, tableName, sqlSplitSql, ch, colName, colType)
 		}
 	}
 	// 计数加 2，表示要等待两个goroutine
@@ -101,7 +109,7 @@ func mysql2pg() {
 	//go runMigration(1, "test", sqlSplit[1], ch,colName,colType)
 	for i := 0; i < goroutineSize; i++ {
 		<-ch
-		log.Info("goroutine[", i, "]", " finish ", time.Now())
+		log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
 	}
 	//go func() {
 	//	for {
@@ -119,7 +127,7 @@ func mysql2pg() {
 	//wg.Wait()
 	cost := time.Since(start)
 
-	log.Info(fmt.Sprintf("执行完成，耗时%s，运行日志请查看%s", cost, logDir))
+	log.Info(fmt.Sprintf("all complete totalTime %s，the reportDir%s", cost, logDir))
 }
 
 // 自动对表分析，然后生成每个表用来迁移查询源库SQL的集合(全表查询或者分页查询)
@@ -128,6 +136,7 @@ func mysql2pg() {
 func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]string) {
 	var tableNumber int // 表总数
 	var sqlStr string   // 查询源库获取要迁移的表名
+	log.Info("exclude table ", excludeTable)
 	// 如果配置文件中exclude存在表名，使用not in排除掉这些表，否则获取到所有表名
 	if excludeTable != nil {
 		sqlStr = "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE' and table_name not in ("
@@ -160,7 +169,7 @@ func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]s
 			log.Error(err)
 		}
 		// 调用函数获取该表用来执行的sql语句
-		log.Info("ID[", tableNumber, "] ", "正在生成表", tableName, " TableMap")
+		log.Info("ID[", tableNumber, "] ", "prepare ", tableName, " TableMap")
 		sqlFullList := prepareSqlStr(tableName, pageSize)
 		// 追加到内层的切片，sql全表扫描语句或者分页查询语句
 		for i := 0; i < len(sqlFullList); i++ {
@@ -273,12 +282,13 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 }
 
 // 根据源sql查询语句，按行遍历使用copy方法迁移到目标数据库
-func runMigration(startPage int, tableName string, sqlStr string, ch chan int, columns []string, colType []string) {
+func runMigration(logDir string, startPage int, tableName string, sqlStr string, ch chan int, columns []string, colType []string) {
 	// 在函数退出时调用Done 来通知main 函数工作已经完成
 	//defer wg.Done()
-	log.Info(fmt.Sprintf("%v 任务goroutine[%d] 正在迁移表%v", time.Now(), startPage, tableName))
+	log.Info(fmt.Sprintf("%v Taskid[%d] Processing TableData %v", time.Now().Format("2006-01-02 15:04:05.000000"), startPage, tableName))
 	start := time.Now()
 	// 直接查询,即查询全表或者分页查询(SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT ?, ?) temp LEFT JOIN test t ON temp.id = t.id;)
+	sqlStr = "/* gomysql2pg */" + sqlStr
 	rows, err := srcDb.Query(sqlStr) //传入参数之后执行
 	defer rows.Close()
 	if err != nil {
@@ -339,6 +349,26 @@ func runMigration(startPage int, tableName string, sqlStr string, ch chan int, c
 	_, err = stmt.Exec() //把所有的buffer进行flush，一次性写入数据
 	if err != nil {
 		log.Error("prepareValues Error: ", prepareValues, err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
+		// 在copy过程中异常的表，将异常信息输出到平面文件
+		f, errFile := os.OpenFile(logDir+"/"+"errorTableData.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
+		if errFile != nil {
+			log.Fatal(errFile)
+		}
+		defer func() {
+			if errFile := f.Close(); errFile != nil {
+				log.Fatal(errFile) // 或设置到函数返回值中
+			}
+		}()
+		// create new buffer
+		buffer := bufio.NewWriter(f)
+		_, errFile = buffer.WriteString(Strval(prepareValues) + Strval(err) + "\n")
+		if errFile != nil {
+			log.Fatal(errFile)
+		}
+		// flush buffered data to the file
+		if errFile := buffer.Flush(); errFile != nil {
+			log.Fatal(errFile)
+		}
 		ch <- 1
 	}
 	err = stmt.Close() //关闭stmt
@@ -354,7 +384,7 @@ func runMigration(startPage int, tableName string, sqlStr string, ch chan int, c
 		log.Error("Commit failed ", err)
 	}
 	cost := time.Since(start) //计算时间差
-	log.Info(fmt.Sprintf("%v 任务goroutine[%d] 表%v执行完成,迁移%d行,耗时%s", time.Now(), startPage, tableName, totalRow, cost))
+	log.Info(fmt.Sprintf("%v Taskid[%d] table %v complete,processed %d rows,execTime %s", time.Now().Format("2006-01-02 15:04:05.000000"), startPage, tableName, totalRow, cost))
 	ch <- 0
 }
 
@@ -369,16 +399,16 @@ func PrepareSrc() {
 	var err error
 	srcDb, err = sql.Open("mysql", srcConn)
 	if err != nil {
-		log.Fatal("请检查Mysql配置", err)
+		log.Fatal("please check MySQL yml file", err)
 	}
 	c := srcDb.Ping()
 	if c != nil {
-		log.Fatal("连接Mysql失败", c)
+		log.Fatal("connect MySQL failed", c)
 	}
 	srcDb.SetConnMaxLifetime(2 * time.Hour)
 	srcDb.SetMaxIdleConns(0)
 	srcDb.SetMaxOpenConns(30)
-	log.Info("连接Mysql成功")
+	log.Info("connect MySQL success")
 }
 
 func PrepareDest() {
@@ -393,13 +423,13 @@ func PrepareDest() {
 	var err error
 	destDb, err = sql.Open("postgres", conn)
 	if err != nil {
-		log.Fatal("请检查Postgres配置", err)
+		log.Fatal("please check Postgres yml file", err)
 	}
 	c := destDb.Ping()
 	if c != nil {
-		log.Fatal("连接Postgres失败", c)
+		log.Fatal("connect Postgres failed", c)
 	}
-	log.Info("连接Postgres成功")
+	log.Info("connect Postgres success")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -467,4 +497,94 @@ func CreateDateDir(basePath string) string {
 		os.Chmod(folderPath, 0777)
 	}
 	return folderPath
+}
+
+func cleanDBconn() {
+	// 遍历正在执行gomysql2pg的客户端，使用kill query 命令kill所有查询id
+	rows, err := srcDb.Query("select id from information_schema.PROCESSLIST where info like '/* gomysql2pg%';")
+	if err != nil {
+		log.Error(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		err = rows.Scan(&id)
+		if err != nil {
+			log.Error("rows.Scan(&id) failed!", err)
+		}
+		srcDb.Exec("kill query " + id)
+		log.Info("kill thread id ", id)
+	}
+}
+
+// 监控来自终端的信号，如果按下了ctrl+c，断开数据库查询以及退出程序
+func exitHandle(exitChan chan os.Signal) {
+
+	for {
+		select {
+		case sig := <-exitChan:
+			fmt.Println("receive system signal:", sig)
+			cleanDBconn() // 调用清理数据库连接的方法
+			os.Exit(1)    //如果ctrl+c 关不掉程序，使用os.Exit强行关掉
+		}
+	}
+
+}
+
+// Strval 获取变量的字符串值，目前用于interface类型转成字符串类型
+// 浮点型 3.0将会转换成字符串3, "3"
+// 非数值或字符类型的变量将会被转换成JSON格式字符串
+func Strval(value interface{}) string {
+	var key string
+	if value == nil {
+		return key
+	}
+
+	switch value.(type) {
+	case float64:
+		ft := value.(float64)
+		key = strconv.FormatFloat(ft, 'f', -1, 64)
+	case float32:
+		ft := value.(float32)
+		key = strconv.FormatFloat(float64(ft), 'f', -1, 64)
+	case int:
+		it := value.(int)
+		key = strconv.Itoa(it)
+	case uint:
+		it := value.(uint)
+		key = strconv.Itoa(int(it))
+	case int8:
+		it := value.(int8)
+		key = strconv.Itoa(int(it))
+	case uint8:
+		it := value.(uint8)
+		key = strconv.Itoa(int(it))
+	case int16:
+		it := value.(int16)
+		key = strconv.Itoa(int(it))
+	case uint16:
+		it := value.(uint16)
+		key = strconv.Itoa(int(it))
+	case int32:
+		it := value.(int32)
+		key = strconv.Itoa(int(it))
+	case uint32:
+		it := value.(uint32)
+		key = strconv.Itoa(int(it))
+	case int64:
+		it := value.(int64)
+		key = strconv.FormatInt(it, 10)
+	case uint64:
+		it := value.(uint64)
+		key = strconv.FormatUint(it, 10)
+	case string:
+		key = value.(string)
+	case []byte:
+		key = string(value.([]byte))
+	default:
+		newValue, _ := json.Marshal(value)
+		key = string(newValue)
+	}
+
+	return key
 }

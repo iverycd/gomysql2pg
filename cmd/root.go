@@ -42,6 +42,13 @@ var rootCmd = &cobra.Command{
 }
 
 func mysql2pg() {
+	// 检查命令行选项是否带--config配置文件
+	if err := viper.ReadInConfig(); err == nil {
+		log.Info("Using config file:", viper.ConfigFileUsed())
+	} else {
+		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
+	}
+	log.Info("Using selfromyml:", selFromYml)
 	// 自动侦测终端是否输入Ctrl+c，若按下主动关闭数据库查询
 	exitChan := make(chan os.Signal)
 	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
@@ -103,30 +110,11 @@ func mysql2pg() {
 			go runMigration(logDir, index, tableName, sqlSplitSql, ch, colName, colType)
 		}
 	}
-	// 计数加 2，表示要等待两个goroutine
-	//wg.Add(2)
-	//go runMigration(0, "test", sqlSplit[0], ch,colName,colType)
-	//go runMigration(1, "test", sqlSplit[1], ch,colName,colType)
 	for i := 0; i < goroutineSize; i++ {
 		<-ch
 		log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
 	}
-	//go func() {
-	//	for {
-	//		select {
-	//		case num := <-ch:
-	//			fmt.Println(num)
-	//		case <-time.After(20*time.Second):
-	//			fmt.Println("超时")
-	//			quit <- true
-	//		}
-	//	}
-	//}()
-	//<-quit
-	// 等待游戏结束
-	//wg.Wait()
 	cost := time.Since(start)
-
 	log.Info(fmt.Sprintf("all complete totalTime %s，the reportDir%s", cost, logDir))
 }
 
@@ -432,28 +420,18 @@ func PrepareDest() {
 	log.Info("connect Postgres success")
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
+func Execute() { // init 函数初始化之后再运行此Execute函数
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
+// 程序中第一个调用的函数,先初始化config
 func init() {
 	cobra.OnInitialize(initConfig)
-
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gomysql2pg.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&selFromYml, "selfromyml", "s", false, "select from yml true")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -477,12 +455,12 @@ func initConfig() {
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		log.Info("Using config file:", viper.ConfigFileUsed())
-	} else {
-		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
-	}
-	log.Info("Using selfromyml:", selFromYml)
+	//if err := viper.ReadInConfig(); err == nil {
+	//	log.Info("Using config file:", viper.ConfigFileUsed())
+	//} else {
+	//	log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
+	//}
+	//log.Info("Using selfromyml:", selFromYml)
 }
 
 // CreateDateDir 根据当前日期来创建文件夹

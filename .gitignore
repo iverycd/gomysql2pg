@@ -1,7 +1,8 @@
 /dbcfg.yml
 /LICENSE
 .idea
-/gomysql2pg.exe
+gomysql2pg.exe
 /2023_*/*.log
 linux_*
 win_*
+gomysql2pg_*

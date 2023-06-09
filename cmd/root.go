@@ -23,13 +23,15 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
+	"gomysql2pg/connect"
 )
 
 var log = logrus.New()
 var cfgFile string
 var selFromYml bool
-var srcDb *sql.DB
-var destDb *sql.DB
+
+//var srcDb *sql.DB
+//var destDb *sql.DB
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -37,18 +39,19 @@ var rootCmd = &cobra.Command{
 	Short: "",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		mysql2pg()
+		connStr := getConn()
+		mysql2pg(connStr)
 	},
 }
 
-func mysql2pg() {
+func mysql2pg(connStr *connect.DbConnStr) {
 	// 检查命令行选项是否带--config配置文件
-	if err := viper.ReadInConfig(); err == nil {
-		log.Info("Using config file:", viper.ConfigFileUsed())
-	} else {
-		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
-	}
-	log.Info("Using selfromyml:", selFromYml)
+	//if err := viper.ReadInConfig(); err == nil {
+	//	log.Info("Using config file:", viper.ConfigFileUsed())
+	//} else {
+	//	log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
+	//}
+	//log.Info("Using selfromyml:", selFromYml)
 	// 自动侦测终端是否输入Ctrl+c，若按下主动关闭数据库查询
 	exitChan := make(chan os.Signal)
 	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
@@ -74,19 +77,20 @@ func mysql2pg() {
 	var tableMap map[string][]string
 	excludeTab := viper.GetStringSlice("exclude")
 	log.Info("running MySQL check connect")
-	PrepareSrc()
+	PrepareSrc(connStr)
 	defer srcDb.Close()
 	// 每页的分页记录数,仅全库迁移时有效
 	pageSize := viper.GetInt("pageSize")
 	log.Info("running Postgres check connect")
-	PrepareDest()
+	PrepareDest(connStr)
 	defer destDb.Close()
-	// 在迁移前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成分页查询切片，没有主键的统一是全表查询sql)
-	if selFromYml {
+	// 以下是迁移数据部分，在迁移前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成分页查询切片，没有主键的统一是全表查询sql)
+	if selFromYml { // 如果用了-s选项，从配置文件中获取表名以及sql语句
 		tableMap = viper.GetStringMapStringSlice("tables")
-	} else {
+	} else { // 不指定-s选项，查询源库所有表名
 		tableMap = fetchTableMap(pageSize, excludeTab)
 	}
+	TableMeta(tableMap)
 	// 打印出map集合里每个表以及表分页查询
 	//for tableName,sqlstr := range tableMap{
 	//	fmt.Println(tableName,"length slice sql ",len(sqlstr),sqlstr)
@@ -376,49 +380,49 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	ch <- 0
 }
 
-func PrepareSrc() {
-	// 生成源库连接
-	srcHost := viper.GetString("src.host")
-	srcUserName := viper.GetString("src.username")
-	srcPassword := viper.GetString("src.password")
-	srcDatabase := viper.GetString("src.database")
-	srcPort := viper.GetInt("src.port")
-	srcConn := fmt.Sprintf("%s:%s@tcp(%s:%v)/%s?charset=utf8&maxAllowedPacket=0", srcUserName, srcPassword, srcHost, srcPort, srcDatabase)
-	var err error
-	srcDb, err = sql.Open("mysql", srcConn)
-	if err != nil {
-		log.Fatal("please check MySQL yml file", err)
-	}
-	c := srcDb.Ping()
-	if c != nil {
-		log.Fatal("connect MySQL failed", c)
-	}
-	srcDb.SetConnMaxLifetime(2 * time.Hour)
-	srcDb.SetMaxIdleConns(0)
-	srcDb.SetMaxOpenConns(30)
-	log.Info("connect MySQL success")
-}
+//func PrepareSrc(connStr *connect.DbConnStr) {
+//	// 生成源库连接
+//	srcHost := connStr.SrcHost
+//	srcUserName := connStr.SrcUserName
+//	srcPassword := connStr.SrcPassword
+//	srcDatabase := connStr.SrcDatabase
+//	srcPort := connStr.SrcPort
+//	srcConn := fmt.Sprintf("%s:%s@tcp(%s:%v)/%s?charset=utf8&maxAllowedPacket=0", srcUserName, srcPassword, srcHost, srcPort, srcDatabase)
+//	var err error
+//	srcDb, err = sql.Open("mysql", srcConn)
+//	if err != nil {
+//		log.Fatal("please check MySQL yml file", err)
+//	}
+//	c := srcDb.Ping()
+//	if c != nil {
+//		log.Fatal("connect MySQL failed", c)
+//	}
+//	srcDb.SetConnMaxLifetime(2 * time.Hour)
+//	srcDb.SetMaxIdleConns(0)
+//	srcDb.SetMaxOpenConns(30)
+//	log.Info("connect MySQL success")
+//}
 
-func PrepareDest() {
-	// 生成目标库连接
-	destHost := viper.GetString("dest.host")
-	destPort := viper.GetInt("dest.port")
-	destUserName := viper.GetString("dest.username")
-	destPassword := viper.GetString("dest.password")
-	destDatabase := viper.GetString("dest.database")
-	conn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%v sslmode=disable", destHost,
-		destUserName, destPassword, destDatabase, destPort)
-	var err error
-	destDb, err = sql.Open("postgres", conn)
-	if err != nil {
-		log.Fatal("please check Postgres yml file", err)
-	}
-	c := destDb.Ping()
-	if c != nil {
-		log.Fatal("connect Postgres failed", c)
-	}
-	log.Info("connect Postgres success")
-}
+//func PrepareDest(connStr *connect.DbConnStr) {
+//	// 生成目标库连接
+//	destHost := connStr.DestHost
+//	destPort := connStr.DestPort
+//	destUserName := connStr.DestUserName
+//	destPassword := connStr.DestPassword
+//	destDatabase := connStr.DestDatabase
+//	conn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%v sslmode=disable", destHost,
+//		destUserName, destPassword, destDatabase, destPort)
+//	var err error
+//	destDb, err = sql.Open("postgres", conn)
+//	if err != nil {
+//		log.Fatal("please check Postgres yml file", err)
+//	}
+//	c := destDb.Ping()
+//	if c != nil {
+//		log.Fatal("connect Postgres failed", c)
+//	}
+//	log.Info("connect Postgres success")
+//}
 
 func Execute() { // init 函数初始化之后再运行此Execute函数
 	if err := rootCmd.Execute(); err != nil {
@@ -454,13 +458,13 @@ func initConfig() {
 
 	viper.AutomaticEnv() // read in environment variables that match
 
-	// If a config file is found, read it in.
-	//if err := viper.ReadInConfig(); err == nil {
-	//	log.Info("Using config file:", viper.ConfigFileUsed())
-	//} else {
-	//	log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
-	//}
-	//log.Info("Using selfromyml:", selFromYml)
+	// 通过viper读取配置文件进行加载
+	if err := viper.ReadInConfig(); err == nil {
+		log.Info("Using config file:", viper.ConfigFileUsed())
+	} else {
+		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
+	}
+	log.Info("Using selfromyml:", selFromYml)
 }
 
 // CreateDateDir 根据当前日期来创建文件夹

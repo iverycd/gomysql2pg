@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -15,6 +16,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print the version number of gomysql2pg",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("\n\nyour version v0.0.5")
+		fmt.Println("\n\nyour version v0.0.6")
+		os.Exit(0)
 	},
 }

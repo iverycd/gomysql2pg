@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/fatih/color"
-	"github.com/sirupsen/logrus"
 	"gomysql2pg/cmd"
 	"time"
 )
@@ -27,10 +26,8 @@ func main() {
 	color.Red("DDDDDDDDDDDDD      BBBBBBBBBBBBBBBBBAAAAAAA                   AAAAAAA   GGGGGG   GGGG     OOOOOOOOO     DDDDDDDDDDDDD        ")
 	colorStr := color.New()
 	colorStr.Add(color.BgMagenta)
-	colorStr.Printf("Powered By: DBA Team Of Infrastructure Research Center")
+	colorStr.Printf("Powered By: DBA Team Of Infrastructure Research Center \nRelease version [v0.0.6]")
 	time.Sleep(5 * 100 * time.Millisecond)
-	var log = logrus.New()
 	fmt.Printf("\n")
 	cmd.Execute()
-	log.Info("[", time.Now().Format("2006-01-02 15:04:05.000000"), "]", "   Release version: v0.0.5")
 }

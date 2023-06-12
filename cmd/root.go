@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"bytes"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"github.com/lib/pq"
 	"io"
@@ -30,9 +28,6 @@ var log = logrus.New()
 var cfgFile string
 var selFromYml bool
 
-//var srcDb *sql.DB
-//var destDb *sql.DB
-
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "gomysql2pg",
@@ -45,13 +40,6 @@ var rootCmd = &cobra.Command{
 }
 
 func mysql2pg(connStr *connect.DbConnStr) {
-	// 检查命令行选项是否带--config配置文件
-	//if err := viper.ReadInConfig(); err == nil {
-	//	log.Info("Using config file:", viper.ConfigFileUsed())
-	//} else {
-	//	log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
-	//}
-	//log.Info("Using selfromyml:", selFromYml)
 	// 自动侦测终端是否输入Ctrl+c，若按下主动关闭数据库查询
 	exitChan := make(chan os.Signal)
 	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
@@ -84,20 +72,16 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	log.Info("running Postgres check connect")
 	PrepareDest(connStr)
 	defer destDb.Close()
-	// 以下是迁移数据部分，在迁移前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成分页查询切片，没有主键的统一是全表查询sql)
+	// 实例初始化，调用接口的方法创建表
+	var db Database
+	db = new(Table)
+	db.TableCreate(tableMap)
+	// 以下是迁移数据前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成分页查询切片，没有主键的统一是全表查询sql)
 	if selFromYml { // 如果用了-s选项，从配置文件中获取表名以及sql语句
 		tableMap = viper.GetStringMapStringSlice("tables")
 	} else { // 不指定-s选项，查询源库所有表名
 		tableMap = fetchTableMap(pageSize, excludeTab)
 	}
-	TableMeta(tableMap)
-	// 打印出map集合里每个表以及表分页查询
-	//for tableName,sqlstr := range tableMap{
-	//	fmt.Println(tableName,"length slice sql ",len(sqlstr),sqlstr)
-	//}
-	// 从yml文件获取键值对信息，得到是一个键值对字典类型map[string][]string，如test:select * from test
-	//tables := viper.GetStringMapStringSlice("tables")
-	// maxRows := viper.GetInt("maxRows")
 	// 同时执行goroutine的数量，这里实际上是每个表查询QL组成切片集合的长度
 	var goroutineSize int
 	//遍历每个表需要执行的切片查询SQL，累计起来获得总的goroutine并发大小
@@ -223,13 +207,7 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 	rows, err := srcDb.Query(sql1, tableName)
 	defer rows.Close()
 	if err != nil {
-		if err == sql.ErrNoRows {
-			//log.Println("no pk col")
-			sqlList = append(sqlList, "select * from "+tableName)
-			return sqlList
-		} else {
-			log.Fatal(sql1, " exec failed ", err)
-		}
+		log.Fatal(sql1, " exec failed ", err)
 	}
 	// 获取主键集合，追加到切片里面
 	for rows.Next() {
@@ -265,7 +243,7 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 		return
 	}
 	// 以下生成分页查询语句
-	for i := 0; i < totalPageNum; i++ {
+	for i := 0; i <= totalPageNum; i++ { // 使用小于等于，包含没有行数据的表
 		sqlStr = "SELECT t.* FROM (SELECT " + buffer1.String() + " FROM " + tableName + " ORDER BY " + buffer1.String() + " LIMIT " + strconv.Itoa(i*pageSize) + "," + strconv.Itoa(pageSize) + ") temp LEFT JOIN " + tableName + " t ON " + buffer2.String() + ";"
 		//sqlStr = "SELECT t.* FROM (SELECT " + colPk +" FROM " +tableName +" ORDER BY " + colPk + " LIMIT "+ strconv.Itoa(i*pageSize) + "," +strconv.Itoa(pageSize) + ") temp LEFT JOIN "+tableName + " t ON temp."+colPk+" = t."+colPk  // 主键是单列的示例
 		sqlList = append(sqlList, strings.ToLower(sqlStr))
@@ -281,6 +259,14 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	start := time.Now()
 	// 直接查询,即查询全表或者分页查询(SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT ?, ?) temp LEFT JOIN test t ON temp.id = t.id;)
 	sqlStr = "/* gomysql2pg */" + sqlStr
+	// 在迁移前判断下目标表是否存在，避免查询源库中大的表
+	_, errDest := destDb.Query("select * from " + tableName + " where 1=0")
+	if errDest != nil {
+		log.Error(fmt.Sprintf("[target table %s not exists ] ", tableName))
+		ch <- 1
+		return
+	}
+	// 查询源库的sql
 	rows, err := srcDb.Query(sqlStr) //传入参数之后执行
 	defer rows.Close()
 	if err != nil {
@@ -342,25 +328,7 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	if err != nil {
 		log.Error("prepareValues Error: ", prepareValues, err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
 		// 在copy过程中异常的表，将异常信息输出到平面文件
-		f, errFile := os.OpenFile(logDir+"/"+"errorTableData.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
-		if errFile != nil {
-			log.Fatal(errFile)
-		}
-		defer func() {
-			if errFile := f.Close(); errFile != nil {
-				log.Fatal(errFile) // 或设置到函数返回值中
-			}
-		}()
-		// create new buffer
-		buffer := bufio.NewWriter(f)
-		_, errFile = buffer.WriteString(Strval(prepareValues) + Strval(err) + "\n")
-		if errFile != nil {
-			log.Fatal(errFile)
-		}
-		// flush buffered data to the file
-		if errFile := buffer.Flush(); errFile != nil {
-			log.Fatal(errFile)
-		}
+		LogError(logDir, "errorTableData", StrVal(prepareValues), err)
 		ch <- 1
 	}
 	err = stmt.Close() //关闭stmt
@@ -379,50 +347,6 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	log.Info(fmt.Sprintf("%v Taskid[%d] table %v complete,processed %d rows,execTime %s", time.Now().Format("2006-01-02 15:04:05.000000"), startPage, tableName, totalRow, cost))
 	ch <- 0
 }
-
-//func PrepareSrc(connStr *connect.DbConnStr) {
-//	// 生成源库连接
-//	srcHost := connStr.SrcHost
-//	srcUserName := connStr.SrcUserName
-//	srcPassword := connStr.SrcPassword
-//	srcDatabase := connStr.SrcDatabase
-//	srcPort := connStr.SrcPort
-//	srcConn := fmt.Sprintf("%s:%s@tcp(%s:%v)/%s?charset=utf8&maxAllowedPacket=0", srcUserName, srcPassword, srcHost, srcPort, srcDatabase)
-//	var err error
-//	srcDb, err = sql.Open("mysql", srcConn)
-//	if err != nil {
-//		log.Fatal("please check MySQL yml file", err)
-//	}
-//	c := srcDb.Ping()
-//	if c != nil {
-//		log.Fatal("connect MySQL failed", c)
-//	}
-//	srcDb.SetConnMaxLifetime(2 * time.Hour)
-//	srcDb.SetMaxIdleConns(0)
-//	srcDb.SetMaxOpenConns(30)
-//	log.Info("connect MySQL success")
-//}
-
-//func PrepareDest(connStr *connect.DbConnStr) {
-//	// 生成目标库连接
-//	destHost := connStr.DestHost
-//	destPort := connStr.DestPort
-//	destUserName := connStr.DestUserName
-//	destPassword := connStr.DestPassword
-//	destDatabase := connStr.DestDatabase
-//	conn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%v sslmode=disable", destHost,
-//		destUserName, destPassword, destDatabase, destPort)
-//	var err error
-//	destDb, err = sql.Open("postgres", conn)
-//	if err != nil {
-//		log.Fatal("please check Postgres yml file", err)
-//	}
-//	c := destDb.Ping()
-//	if c != nil {
-//		log.Fatal("connect Postgres failed", c)
-//	}
-//	log.Info("connect Postgres success")
-//}
 
 func Execute() { // init 函数初始化之后再运行此Execute函数
 	if err := rootCmd.Execute(); err != nil {
@@ -465,108 +389,4 @@ func initConfig() {
 		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
 	}
 	log.Info("Using selfromyml:", selFromYml)
-}
-
-// CreateDateDir 根据当前日期来创建文件夹
-func CreateDateDir(basePath string) string {
-	folderName := time.Now().Format("2006_01_02_15_04_05")
-	folderPath := filepath.Join(basePath, folderName)
-	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
-		// 必须分成两步
-		// 先创建文件夹
-		os.Mkdir(folderPath, 0777)
-		// 再修改权限
-		os.Chmod(folderPath, 0777)
-	}
-	return folderPath
-}
-
-func cleanDBconn() {
-	// 遍历正在执行gomysql2pg的客户端，使用kill query 命令kill所有查询id
-	rows, err := srcDb.Query("select id from information_schema.PROCESSLIST where info like '/* gomysql2pg%';")
-	if err != nil {
-		log.Error(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id string
-		err = rows.Scan(&id)
-		if err != nil {
-			log.Error("rows.Scan(&id) failed!", err)
-		}
-		srcDb.Exec("kill query " + id)
-		log.Info("kill thread id ", id)
-	}
-}
-
-// 监控来自终端的信号，如果按下了ctrl+c，断开数据库查询以及退出程序
-func exitHandle(exitChan chan os.Signal) {
-
-	for {
-		select {
-		case sig := <-exitChan:
-			fmt.Println("receive system signal:", sig)
-			cleanDBconn() // 调用清理数据库连接的方法
-			os.Exit(1)    //如果ctrl+c 关不掉程序，使用os.Exit强行关掉
-		}
-	}
-
-}
-
-// Strval 获取变量的字符串值，目前用于interface类型转成字符串类型
-// 浮点型 3.0将会转换成字符串3, "3"
-// 非数值或字符类型的变量将会被转换成JSON格式字符串
-func Strval(value interface{}) string {
-	var key string
-	if value == nil {
-		return key
-	}
-
-	switch value.(type) {
-	case float64:
-		ft := value.(float64)
-		key = strconv.FormatFloat(ft, 'f', -1, 64)
-	case float32:
-		ft := value.(float32)
-		key = strconv.FormatFloat(float64(ft), 'f', -1, 64)
-	case int:
-		it := value.(int)
-		key = strconv.Itoa(it)
-	case uint:
-		it := value.(uint)
-		key = strconv.Itoa(int(it))
-	case int8:
-		it := value.(int8)
-		key = strconv.Itoa(int(it))
-	case uint8:
-		it := value.(uint8)
-		key = strconv.Itoa(int(it))
-	case int16:
-		it := value.(int16)
-		key = strconv.Itoa(int(it))
-	case uint16:
-		it := value.(uint16)
-		key = strconv.Itoa(int(it))
-	case int32:
-		it := value.(int32)
-		key = strconv.Itoa(int(it))
-	case uint32:
-		it := value.(uint32)
-		key = strconv.Itoa(int(it))
-	case int64:
-		it := value.(int64)
-		key = strconv.FormatInt(it, 10)
-	case uint64:
-		it := value.(uint64)
-		key = strconv.FormatUint(it, 10)
-	case string:
-		key = value.(string)
-	case []byte:
-		key = string(value.([]byte))
-	default:
-		newValue, _ := json.Marshal(value)
-		key = string(newValue)
-	}
-
-	return key
 }

@@ -26,7 +26,7 @@ func main() {
 	color.Red("DDDDDDDDDDDDD      BBBBBBBBBBBBBBBBBAAAAAAA                   AAAAAAA   GGGGGG   GGGG     OOOOOOOOO     DDDDDDDDDDDDD        ")
 	colorStr := color.New()
 	colorStr.Add(color.BgMagenta)
-	colorStr.Printf("Powered By: DBA Team Of Infrastructure Research Center \nRelease version [v0.0.6]")
+	colorStr.Printf("Powered By: DBA Team Of Infrastructure Research Center \nRelease version [v0.0.7]")
 	time.Sleep(5 * 100 * time.Millisecond)
 	fmt.Printf("\n")
 	cmd.Execute()

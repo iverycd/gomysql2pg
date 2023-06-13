@@ -2,6 +2,11 @@
 
 ## change history
 
+### v0.0.8
+2023-06-13
+
+使用多个goroutine并发生成每个表的迁移任务、创建表，其余优化
+
 ### v0.0.7
 2023-06-12
 
@@ -83,4 +88,24 @@ go run ./main.go  --config 配置文件 -s
 不迁移全表数据，只根据配置文件中自定义查询语句迁移数据到目标库
 ```
 go run ./main.go  --config example.yml -s
+```
+
+模式3 仅创建表(全库所有表)
+
+`如果配置文件中exclude区域有配置排除表，该表也不会被创建`
+
+go run ./main.go  --config 配置文件 -t
+
+仅在目标库创建所有表
+```
+go run ./main.go  --config example.yml -t
+```
+
+模式4 仅创建配置文件内容的表
+
+go run ./main.go  --config 配置文件 -s -t
+
+仅在目标库创建所有表
+```
+go run ./main.go  --config example.yml -s -t
 ```

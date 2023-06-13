@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 var log = logrus.New()
 var cfgFile string
 var selFromYml bool
+var tableOnly bool
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -34,13 +36,14 @@ var rootCmd = &cobra.Command{
 	Short: "",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
+		// 获取配置文件中的数据库连接字符串
 		connStr := getConn()
 		mysql2pg(connStr)
 	},
 }
 
 func mysql2pg(connStr *connect.DbConnStr) {
-	// 自动侦测终端是否输入Ctrl+c，若按下主动关闭数据库查询
+	// 自动侦测终端是否输入Ctrl+c,若按下,主动关闭数据库查询
 	exitChan := make(chan os.Signal)
 	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
 	go exitHandle(exitChan)
@@ -61,43 +64,51 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	multiWriter := io.MultiWriter(os.Stdout, f)
 	log.SetOutput(multiWriter)
 	start := time.Now()
-	// map结构，表名以及查询语句
+	// map结构，表名以及该表用来迁移查询源库的语句
 	var tableMap map[string][]string
+	// 从配置文件中获取需要排除的表
 	excludeTab := viper.GetStringSlice("exclude")
 	log.Info("running MySQL check connect")
+	// 生成源库数据库连接
 	PrepareSrc(connStr)
 	defer srcDb.Close()
 	// 每页的分页记录数,仅全库迁移时有效
 	pageSize := viper.GetInt("pageSize")
 	log.Info("running Postgres check connect")
+	// 生成目标库的数据库连接
 	PrepareDest(connStr)
 	defer destDb.Close()
-	// 实例初始化，调用接口的方法创建表
-	var db Database
-	db = new(Table)
-	db.TableCreate(tableMap)
-	// 以下是迁移数据前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成分页查询切片，没有主键的统一是全表查询sql)
+	// 以下是迁移数据前的准备工作，获取要迁移的表名以及该表查询源库的sql语句(如果有主键生成该表的分页查询切片集合，没有主键的统一是全表查询sql)
 	if selFromYml { // 如果用了-s选项，从配置文件中获取表名以及sql语句
 		tableMap = viper.GetStringMapStringSlice("tables")
 	} else { // 不指定-s选项，查询源库所有表名
 		tableMap = fetchTableMap(pageSize, excludeTab)
 	}
-	// 同时执行goroutine的数量，这里实际上是每个表查询QL组成切片集合的长度
+	// 实例初始化，调用接口中创建目标表的方法
+	var db Database
+	db = new(Table)
+	db.TableCreate(logDir, tableMap)
+	// 同时执行goroutine的数量，这里是每个表查询语句切片集合的长度
 	var goroutineSize int
 	//遍历每个表需要执行的切片查询SQL，累计起来获得总的goroutine并发大小
 	for _, sqlList := range tableMap {
 		goroutineSize += len(sqlList)
 	}
-	// 每个goroutine运行开始以及结束之后使用的通道
+	// 每个goroutine运行开始以及结束之后使用的通道，主要用于控制内层的goroutine任务与外层main线程的同步，即主线程需要等待子任务完成
 	ch := make(chan int, goroutineSize)
 	//遍历tableMap，先遍历表，再遍历该表的sql切片集合
 	for tableName, sqlFullSplit := range tableMap { //获取单个表名
-		colName, colType := preMigdata(tableName, sqlFullSplit) //获取单表的列名，列字段类型
-		// 遍历该表的sql切片(多个分页查询或者全表查询sql)
-		for index, sqlSplitSql := range sqlFullSplit {
-			go runMigration(logDir, index, tableName, sqlSplitSql, ch, colName, colType)
+		colName, colType, tableNotExist := preMigData(tableName, sqlFullSplit) //获取单表的列名，列字段类型
+		if !tableNotExist {                                                    //目标表存在就执行数据迁移
+			// 遍历该表的sql切片(多个分页查询或者全表查询sql)
+			for index, sqlSplitSql := range sqlFullSplit {
+				go runMigration(logDir, index, tableName, sqlSplitSql, ch, colName, colType)
+			}
+		} else { //目标表不存在就往通道写1
+			ch <- 1
 		}
 	}
+	// 这里是等待上面所有goroutine任务完成，才会执行for循环下面的动作
 	for i := 0; i < goroutineSize; i++ {
 		<-ch
 		log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
@@ -112,6 +123,10 @@ func mysql2pg(connStr *connect.DbConnStr) {
 func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]string) {
 	var tableNumber int // 表总数
 	var sqlStr string   // 查询源库获取要迁移的表名
+	// 声明一个等待组
+	var wg sync.WaitGroup
+	// 使用互斥锁 sync.Mutex才能使用并发的goroutine
+	mutex := &sync.Mutex{}
 	log.Info("exclude table ", excludeTable)
 	// 如果配置文件中exclude存在表名，使用not in排除掉这些表，否则获取到所有表名
 	if excludeTable != nil {
@@ -140,33 +155,49 @@ func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]s
 	tableMap = make(map[string][]string)
 	for rows.Next() {
 		tableNumber++
+		// 每一个任务开始时, 将等待组增加1
+		wg.Add(1)
+		var sqlFullList []string
 		err = rows.Scan(&tableName)
 		if err != nil {
 			log.Error(err)
 		}
-		// 调用函数获取该表用来执行的sql语句
-		log.Info("ID[", tableNumber, "] ", "prepare ", tableName, " TableMap")
-		sqlFullList := prepareSqlStr(tableName, pageSize)
-		// 追加到内层的切片，sql全表扫描语句或者分页查询语句
-		for i := 0; i < len(sqlFullList); i++ {
-			tableMap[tableName] = append(tableMap[tableName], sqlFullList[i])
-		}
+		// 使用多个并发的goroutine调用函数获取该表用来执行的sql语句
+		log.Info(time.Now().Format("2006-01-02 15:04:05.000000"), "ID[", tableNumber, "] ", "prepare ", tableName, " TableMap")
+		go func(tableName string, sqlFullList []string) {
+			// 使用defer, 表示函数完成时将等待组值减1
+			defer wg.Done()
+			// !tableOnly即没有指定-t选项，生成全库的分页查询语句，否则sqlFullList仅追加空字符串
+			if !tableOnly {
+				sqlFullList = prepareSqlStr(tableName, pageSize)
+			} else {
+				sqlFullList = append(sqlFullList, "")
+			}
+			// 追加到内层的切片，sql全表扫描语句或者分页查询语句，例如tableMap[test1]="select * from test1"
+			for i := 0; i < len(sqlFullList); i++ {
+				mutex.Lock()
+				tableMap[tableName] = append(tableMap[tableName], sqlFullList[i])
+				mutex.Unlock()
+			}
+		}(tableName, sqlFullList)
 	}
+	// 等待所有的任务完成
+	wg.Wait()
 	return tableMap
 }
 
-// 迁移数据前先清空目标表数据，并获取每个表查询语句的列名以及列字段类型
-func preMigdata(tableName string, sqlFullSplit []string) (dbCol []string, dbColType []string) {
+// 迁移数据前先清空目标表数据，并获取每个表查询语句的列名以及列字段类型,表如果不存在返回布尔值true
+func preMigData(tableName string, sqlFullSplit []string) (dbCol []string, dbColType []string, tableNotExist bool) {
 	var sqlCol string
-	//log.Info(fmt.Sprintf("%v 开始预先处理表 ", time.Now()))
 	// 在写数据前，先清空下目标表数据
 	truncateSql := "truncate table " + tableName
 	if _, err := destDb.Exec(truncateSql); err != nil {
 		log.Error("truncate ", tableName, " failed   ", err)
-		return // 表不存在接直接return
+		tableNotExist = true
+		return // 表不存在return布尔值
 	}
 	// 获取表的字段名以及类型
-	// 如果指定了参数selfromyml，就读取yml文件中配置的sql获取"自定义查询sql生成的列名"，否则按照select * 查全表获取
+	// 如果指定了参数-s，就读取yml文件中配置的sql获取"自定义查询sql生成的列名"，否则按照select * 查全表获取
 	if selFromYml {
 		sqlCol = "select * from (" + sqlFullSplit[0] + " )aa where 1=0;" // 在自定义sql外层套一个select * from (自定义sql) where 1=0
 	} else {
@@ -193,15 +224,15 @@ func preMigdata(tableName string, sqlFullSplit []string) (dbCol []string, dbColT
 		dbCol = append(dbCol, strings.ToLower(value)) //由于CopyIn方法每个列都会使用双引号包围，这里把列名全部转为小写(pg库默认都是小写的列名)，这样即便加上双引号也能正确查询到列
 		dbColType = append(dbColType, strings.ToUpper(colType[i].DatabaseTypeName()))
 	}
-	return dbCol, dbColType
+	return dbCol, dbColType, tableNotExist
 }
 
-// 根据表是否有主键，自动生成每个表查询sql，有主键就生成分页查询组成的切片，没主键就拼成全表查询sql
+// 根据表是否有主键，自动生成每个表查询sql，有主键就生成分页查询组成的切片，没主键就拼成全表查询sql，最后返回sql切片
 func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
-	var scanColPk string
-	var colFullPk []string
-	var totalPageNum int
-	var sqlStr string
+	var scanColPk string   // 每个表主键列字段名称
+	var colFullPk []string // 每个表所有主键列字段生成的切片
+	var totalPageNum int   // 每个表的分页查询记录总数，即总共有多少页记录
+	var sqlStr string      // 分页查询或者全表扫描sql
 	//先获取下主键字段名称,可能是1个，或者2个以上组成的联合主键
 	sql1 := "SELECT lower(COLUMN_NAME) FROM information_schema.key_column_usage t WHERE constraint_name='PRIMARY' AND table_schema=DATABASE() AND table_name=? order by ORDINAL_POSITION;"
 	rows, err := srcDb.Query(sql1, tableName)
@@ -235,7 +266,7 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 		}
 	}
 	// 如果有主键,根据当前表总数以及每页的页记录大小pageSize，自动计算需要多少页记录数，即总共循环多少次，如果表没有数据，后面判断下切片长度再做处理
-	sql2 := "select ceil(count(*)/" + strconv.Itoa(pageSize) + ") as total_page_num from " + tableName
+	sql2 := "/* gomysql2pg */" + "select ceil(count(*)/" + strconv.Itoa(pageSize) + ") as total_page_num from " + tableName
 	//以下是直接使用QueryRow
 	err = srcDb.QueryRow(sql2).Scan(&totalPageNum)
 	if err != nil {
@@ -245,7 +276,6 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 	// 以下生成分页查询语句
 	for i := 0; i <= totalPageNum; i++ { // 使用小于等于，包含没有行数据的表
 		sqlStr = "SELECT t.* FROM (SELECT " + buffer1.String() + " FROM " + tableName + " ORDER BY " + buffer1.String() + " LIMIT " + strconv.Itoa(i*pageSize) + "," + strconv.Itoa(pageSize) + ") temp LEFT JOIN " + tableName + " t ON " + buffer2.String() + ";"
-		//sqlStr = "SELECT t.* FROM (SELECT " + colPk +" FROM " +tableName +" ORDER BY " + colPk + " LIMIT "+ strconv.Itoa(i*pageSize) + "," +strconv.Itoa(pageSize) + ") temp LEFT JOIN "+tableName + " t ON temp."+colPk+" = t."+colPk  // 主键是单列的示例
 		sqlList = append(sqlList, strings.ToLower(sqlStr))
 	}
 	return sqlList
@@ -253,19 +283,10 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 
 // 根据源sql查询语句，按行遍历使用copy方法迁移到目标数据库
 func runMigration(logDir string, startPage int, tableName string, sqlStr string, ch chan int, columns []string, colType []string) {
-	// 在函数退出时调用Done 来通知main 函数工作已经完成
-	//defer wg.Done()
 	log.Info(fmt.Sprintf("%v Taskid[%d] Processing TableData %v", time.Now().Format("2006-01-02 15:04:05.000000"), startPage, tableName))
 	start := time.Now()
 	// 直接查询,即查询全表或者分页查询(SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT ?, ?) temp LEFT JOIN test t ON temp.id = t.id;)
 	sqlStr = "/* gomysql2pg */" + sqlStr
-	// 在迁移前判断下目标表是否存在，避免查询源库中大的表
-	_, errDest := destDb.Query("select * from " + tableName + " where 1=0")
-	if errDest != nil {
-		log.Error(fmt.Sprintf("[target table %s not exists ] ", tableName))
-		ch <- 1
-		return
-	}
 	// 查询源库的sql
 	rows, err := srcDb.Query(sqlStr) //传入参数之后执行
 	defer rows.Close()
@@ -286,8 +307,8 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	stmt, err := txn.Prepare(pq.CopyIn(tableName, columns...)) //prepare里的方法CopyIn只是把copy语句拼接好并返回，并非直接执行copy
 	if err != nil {
 		log.Error("Prepare pq.CopyIn failed ", err)
-		ch <- 1
-		return // 遇到CopyIn异常就直接return
+		ch <- 1 // 执行pg的copy异常就往通道写入1
+		return  // 遇到CopyIn异常就直接return
 	}
 	var totalRow int                                   // 表总行数
 	prepareValues := make([]interface{}, len(columns)) //用于给copy方法，一行数据的切片，里面各个元素是各个列字段值
@@ -359,7 +380,8 @@ func Execute() { // init 函数初始化之后再运行此Execute函数
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gomysql2pg.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&selFromYml, "selfromyml", "s", false, "select from yml true")
+	rootCmd.PersistentFlags().BoolVarP(&selFromYml, "selFromYml", "s", false, "select from yml true")
+	rootCmd.PersistentFlags().BoolVarP(&tableOnly, "tableOnly", "t", false, "only create table true")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -388,5 +410,5 @@ func initConfig() {
 	} else {
 		log.Fatal(viper.ConfigFileUsed(), " has some error please check your yml file ! ", "Detail-> ", err)
 	}
-	log.Info("Using selfromyml:", selFromYml)
+	log.Info("Using selFromYml:", selFromYml)
 }

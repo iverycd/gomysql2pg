@@ -28,7 +28,8 @@ import (
 var log = logrus.New()
 var cfgFile string
 var selFromYml bool
-var tableOnly bool
+
+//var tableOnly bool
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -88,6 +89,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	var db Database
 	db = new(Table)
 	db.TableCreate(logDir, tableMap)
+	//db.SeqCreate(logDir, tableMap)
 	// 同时执行goroutine的数量，这里是每个表查询语句切片集合的长度
 	var goroutineSize int
 	//遍历每个表需要执行的切片查询SQL，累计起来获得总的goroutine并发大小
@@ -113,6 +115,8 @@ func mysql2pg(connStr *connect.DbConnStr) {
 		<-ch
 		log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
 	}
+	// 创建序列
+	db.SeqCreate(logDir)
 	cost := time.Since(start)
 	log.Info(fmt.Sprintf("all complete totalTime %s，the reportDir%s", cost, logDir))
 }
@@ -167,7 +171,7 @@ func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]s
 		go func(tableName string, sqlFullList []string) {
 			// 使用defer, 表示函数完成时将等待组值减1
 			defer wg.Done()
-			// !tableOnly即没有指定-t选项，生成全库的分页查询语句，否则sqlFullList仅追加空字符串
+			// !tableOnly即没有指定-t选项，生成全库的分页查询语句，否则就是指定了-t选项,sqlFullList仅追加空字符串
 			if !tableOnly {
 				sqlFullList = prepareSqlStr(tableName, pageSize)
 			} else {
@@ -381,7 +385,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gomysql2pg.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&selFromYml, "selFromYml", "s", false, "select from yml true")
-	rootCmd.PersistentFlags().BoolVarP(&tableOnly, "tableOnly", "t", false, "only create table true")
+	//rootCmd.PersistentFlags().BoolVarP(&tableOnly, "tableOnly", "t", false, "only create table true")
 }
 
 // initConfig reads in config file and ENV variables if set.

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -10,6 +9,8 @@ import (
 
 type Database interface {
 	TableCreate(logDir string, tableMap map[string][]string)
+	//SeqCreate(logDir string, tableMap map[string][]string)
+	SeqCreate(logDir string)
 }
 
 type Table struct {
@@ -27,6 +28,10 @@ type Table struct {
 	destType               string
 	destNullable           string
 	destDefault            string
+	autoIncrement          int
+	destSeqSql             string
+	destDefaultSeq         string
+	dropSeqSql             string
 }
 
 func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) {
@@ -131,8 +136,84 @@ func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) {
 	// 等待所有的任务完成
 	wg.Wait()
 	log.Info("Table structure synced from MySQL to PostgreSQL Table count ", tableCount)
-	// 如果指定-t选项，表创建完毕之后就退出程序
-	if tableOnly {
-		os.Exit(0)
+}
+
+//func (tb *Table) SeqCreate(logDir string, tableMap map[string][]string)()  {
+//	// 声明一个等待组
+//	var wg sync.WaitGroup
+//	tableCount := 0
+//	// 获取tableMap键值对中的表名
+//	for tblName, _ := range tableMap {
+//		tableCount += 1
+//		// 每一个任务开始时, 将等待组增加1
+//		wg.Add(1)
+//		// 使用goroutine并发的创建多个序列
+//		go func(tblName string, tb Table, tableCount int) {
+//			// 使用defer, 表示函数完成时将等待组值减1
+//			defer wg.Done()
+//			// 查询MySQL自增列信息，批量生成创建序列sql
+//			sql := fmt.Sprintf("select COLUMN_NAME,Auto_increment,lower(concat('drop sequence if exists ','seq_',TABLE_NAME,'_',COLUMN_NAME,';')) drop_seq,lower(concat('create sequence ','seq_',TABLE_NAME,'_',COLUMN_NAME,' INCREMENT BY 1 START ',Auto_increment,';')) create_seq, lower(concat('alter table ',table_name,' alter column ',COLUMN_NAME, ' set default nextval(', '''' ,'seq_',TABLE_NAME,'_',COLUMN_NAME,  '''',');')) alter_default  from (select Auto_increment,column_name,a.table_name from (select TABLE_NAME, Auto_increment,case when Auto_increment  is not null then 'auto_increment' else '0' end ai from information_schema. TABLES where TABLE_SCHEMA =database() and  AUTO_INCREMENT is not null) a join (select table_name,COLUMN_NAME,EXTRA from information_schema. COLUMNS where TABLE_SCHEMA =database() and table_name in(select t.TABLE_NAME from information_schema. TABLES t where TABLE_SCHEMA =database() and AUTO_INCREMENT is not null)  and EXTRA='auto_increment' ) b on a.ai = b.EXTRA and a.table_name =b.table_name) aaa where table_name='%s';", tblName)
+//			//fmt.Println(sql)
+//			rows, err := srcDb.Query(sql)
+//			if err != nil {
+//				log.Error(err)
+//			}
+//			// 从sql结果集遍历，获取到删除序列，创建序列，默认值为自增列
+//			for rows.Next() {
+//				if err := rows.Scan(&tb.columnName,&tb.autoIncrement,&tb.dropSeqSql,&tb.destSeqSql,&tb.destDefaultSeq); err != nil {
+//					log.Error(err)
+//				}
+//			}
+//			if tb.columnName != ""{
+//				// 创建前先删除目标序列
+//				if _, err = destDb.Exec(tb.dropSeqSql); err != nil {
+//					log.Error(err)
+//				}
+//				// 创建目标序列
+//				log.Info(fmt.Sprintf("%v ProcessingID %s create sequence %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(tableCount), tblName))
+//				if _, err = destDb.Exec(tb.destSeqSql); err != nil {
+//					log.Error("table ", tblName, " create sequence failed ", err)
+//					LogError(logDir, "seqCreateFailed", tb.destSeqSql, err)
+//				}
+//			}
+//
+//		}(tblName, *tb, tableCount)
+//	}
+//	// 等待所有的任务完成
+//	wg.Wait()
+//	log.Info("sequence count ", tableCount)
+//	// 如果指定-t选项，表创建完毕之后就退出程序
+//	if tableOnly {
+//		os.Exit(0)
+//	}
+//}
+
+func (tb *Table) SeqCreate(logDir string) {
+	tableCount := 0
+	var tableName string
+	// 查询MySQL自增列信息，批量生成创建序列sql
+	sql := fmt.Sprintf("select table_name,COLUMN_NAME,Auto_increment,lower(concat('drop sequence if exists ','seq_',TABLE_NAME,'_',COLUMN_NAME,';')) drop_seq,lower(concat('create sequence ','seq_',TABLE_NAME,'_',COLUMN_NAME,' INCREMENT BY 1 START ',Auto_increment,';')) create_seq, lower(concat('alter table ',table_name,' alter column ',COLUMN_NAME, ' set default nextval(', '''' ,'seq_',TABLE_NAME,'_',COLUMN_NAME,  '''',');')) alter_default  from (select Auto_increment,column_name,a.table_name from (select TABLE_NAME, Auto_increment,case when Auto_increment  is not null then 'auto_increment' else '0' end ai from information_schema. TABLES where TABLE_SCHEMA =database() and  AUTO_INCREMENT is not null) a join (select table_name,COLUMN_NAME,EXTRA from information_schema. COLUMNS where TABLE_SCHEMA =database() and table_name in(select t.TABLE_NAME from information_schema. TABLES t where TABLE_SCHEMA =database() and AUTO_INCREMENT is not null)  and EXTRA='auto_increment' ) b on a.ai = b.EXTRA and a.table_name =b.table_name) aaa;")
+	//fmt.Println(sql)
+	rows, err := srcDb.Query(sql)
+	if err != nil {
+		log.Error(err)
 	}
+	// 从sql结果集遍历，获取到删除序列，创建序列，默认值为自增列
+	for rows.Next() {
+		tableCount += 1
+		if err := rows.Scan(&tableName, &tb.columnName, &tb.autoIncrement, &tb.dropSeqSql, &tb.destSeqSql, &tb.destDefaultSeq); err != nil {
+			log.Error(err)
+		}
+		// 创建前先删除目标序列
+		if _, err = destDb.Exec(tb.dropSeqSql); err != nil {
+			log.Error(err)
+		}
+		// 创建目标序列
+		log.Info(fmt.Sprintf("%v ProcessingID %s create sequence %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(tableCount), tableName))
+		if _, err = destDb.Exec(tb.destSeqSql); err != nil {
+			log.Error("table ", tableName, " create sequence failed ", err)
+			LogError(logDir, "seqCreateFailed", tb.destSeqSql, err)
+		}
+	}
+	log.Info("sequence count ", tableCount)
 }

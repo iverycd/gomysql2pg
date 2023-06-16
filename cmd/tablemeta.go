@@ -9,8 +9,8 @@ import (
 
 type Database interface {
 	TableCreate(logDir string, tableMap map[string][]string)
-	//SeqCreate(logDir string, tableMap map[string][]string)
 	SeqCreate(logDir string)
+	IdxCreate(logDir string)
 }
 
 type Table struct {
@@ -32,6 +32,7 @@ type Table struct {
 	destSeqSql             string
 	destDefaultSeq         string
 	dropSeqSql             string
+	destIdxSql             string
 }
 
 func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) {
@@ -214,6 +215,37 @@ func (tb *Table) SeqCreate(logDir string) {
 			log.Error("table ", tableName, " create sequence failed ", err)
 			LogError(logDir, "seqCreateFailed", tb.destSeqSql, err)
 		}
+		// 设置表自增列为序列，如果表不存并单独创建序列会有error但是毫无影响
+		log.Info(fmt.Sprintf("%v ProcessingID %s set default sequence %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(tableCount), tableName))
+		if _, err = destDb.Exec(tb.destDefaultSeq); err != nil {
+			log.Error("table ", tableName, " set default sequence failed ", err)
+			LogError(logDir, "seqCreateFailed", tb.destDefaultSeq, err)
+		}
 	}
 	log.Info("sequence count ", tableCount)
+}
+
+func (tb *Table) IdxCreate(logDir string) {
+	id := 0
+	// 查询MySQL索引、主键、唯一约束等信息，批量生成创建语句
+	sql := fmt.Sprintf("SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE ', TABLE_NAME, ' ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', table_name, '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' ', table_name, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;")
+	//fmt.Println(sql)
+	rows, err := srcDb.Query(sql)
+	if err != nil {
+		log.Error(err)
+	}
+	// 从sql结果集遍历，获取到创建语句
+	for rows.Next() {
+		id += 1
+		if err := rows.Scan(&tb.destIdxSql); err != nil {
+			log.Error(err)
+		}
+		// 创建目标索引，主键、其余约束
+		log.Info(fmt.Sprintf("%v ProcessingID %s create index and constraint %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), tb.destIdxSql))
+		if _, err = destDb.Exec(tb.destIdxSql); err != nil {
+			log.Error("index ", tb.destIdxSql, " create index failed ", err)
+			LogError(logDir, "idxCreateFailed", tb.destIdxSql, err)
+		}
+	}
+	log.Info("index  count ", id)
 }

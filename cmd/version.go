@@ -16,7 +16,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print the version number of gomysql2pg",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("\n\nyour version v0.0.6")
+		fmt.Println("\n\nyour version v0.1.0")
 		os.Exit(0)
 	},
 }

@@ -117,6 +117,8 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	}
 	// 创建序列
 	db.SeqCreate(logDir)
+	// 创建索引、约束
+	db.IdxCreate(logDir)
 	cost := time.Since(start)
 	log.Info(fmt.Sprintf("all complete totalTime %s，the reportDir%s", cost, logDir))
 }

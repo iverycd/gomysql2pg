@@ -14,6 +14,7 @@ var tableOnly bool
 func init() {
 	rootCmd.AddCommand(createTableCmd)
 	rootCmd.AddCommand(seqOnlyCmd)
+	rootCmd.AddCommand(idxOnlyCmd)
 	createTableCmd.Flags().BoolVarP(&tableOnly, "tableOnly", "t", false, "only create table true")
 }
 
@@ -85,5 +86,35 @@ var seqOnlyCmd = &cobra.Command{
 		var db Database
 		db = new(Table)
 		db.SeqCreate(logDir)
+	},
+}
+
+var idxOnlyCmd = &cobra.Command{
+	Use:   "idxOnly",
+	Short: "Create index",
+	Long:  ``,
+	Run: func(cmd *cobra.Command, args []string) {
+		// 获取配置文件中的数据库连接字符串
+		connStr := getConn()
+		PrepareSrc(connStr)
+		PrepareDest(connStr)
+		// 创建运行日志目录
+		logDir, _ := filepath.Abs(CreateDateDir(""))
+		f, err := os.OpenFile(logDir+"/"+"run.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Fatal(err) // 或设置到函数返回值中
+			}
+		}()
+		// log信息重定向到平面文件
+		multiWriter := io.MultiWriter(os.Stdout, f)
+		log.SetOutput(multiWriter)
+		// 实例初始化，调用接口中创建目标表的方法
+		var db Database
+		db = new(Table)
+		db.IdxCreate(logDir)
 	},
 }

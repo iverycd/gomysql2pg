@@ -11,6 +11,9 @@ type Database interface {
 	TableCreate(logDir string, tableMap map[string][]string)
 	SeqCreate(logDir string)
 	IdxCreate(logDir string)
+	ViewCreate(logDir string)
+	FKCreate(logDir string)
+	TriggerCreate(logDir string)
 }
 
 type Table struct {
@@ -33,6 +36,7 @@ type Table struct {
 	destDefaultSeq         string
 	dropSeqSql             string
 	destIdxSql             string
+	viewSql                string
 }
 
 func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) {
@@ -139,56 +143,6 @@ func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) {
 	log.Info("Table structure synced from MySQL to PostgreSQL Table count ", tableCount)
 }
 
-//func (tb *Table) SeqCreate(logDir string, tableMap map[string][]string)()  {
-//	// 声明一个等待组
-//	var wg sync.WaitGroup
-//	tableCount := 0
-//	// 获取tableMap键值对中的表名
-//	for tblName, _ := range tableMap {
-//		tableCount += 1
-//		// 每一个任务开始时, 将等待组增加1
-//		wg.Add(1)
-//		// 使用goroutine并发的创建多个序列
-//		go func(tblName string, tb Table, tableCount int) {
-//			// 使用defer, 表示函数完成时将等待组值减1
-//			defer wg.Done()
-//			// 查询MySQL自增列信息，批量生成创建序列sql
-//			sql := fmt.Sprintf("select COLUMN_NAME,Auto_increment,lower(concat('drop sequence if exists ','seq_',TABLE_NAME,'_',COLUMN_NAME,';')) drop_seq,lower(concat('create sequence ','seq_',TABLE_NAME,'_',COLUMN_NAME,' INCREMENT BY 1 START ',Auto_increment,';')) create_seq, lower(concat('alter table ',table_name,' alter column ',COLUMN_NAME, ' set default nextval(', '''' ,'seq_',TABLE_NAME,'_',COLUMN_NAME,  '''',');')) alter_default  from (select Auto_increment,column_name,a.table_name from (select TABLE_NAME, Auto_increment,case when Auto_increment  is not null then 'auto_increment' else '0' end ai from information_schema. TABLES where TABLE_SCHEMA =database() and  AUTO_INCREMENT is not null) a join (select table_name,COLUMN_NAME,EXTRA from information_schema. COLUMNS where TABLE_SCHEMA =database() and table_name in(select t.TABLE_NAME from information_schema. TABLES t where TABLE_SCHEMA =database() and AUTO_INCREMENT is not null)  and EXTRA='auto_increment' ) b on a.ai = b.EXTRA and a.table_name =b.table_name) aaa where table_name='%s';", tblName)
-//			//fmt.Println(sql)
-//			rows, err := srcDb.Query(sql)
-//			if err != nil {
-//				log.Error(err)
-//			}
-//			// 从sql结果集遍历，获取到删除序列，创建序列，默认值为自增列
-//			for rows.Next() {
-//				if err := rows.Scan(&tb.columnName,&tb.autoIncrement,&tb.dropSeqSql,&tb.destSeqSql,&tb.destDefaultSeq); err != nil {
-//					log.Error(err)
-//				}
-//			}
-//			if tb.columnName != ""{
-//				// 创建前先删除目标序列
-//				if _, err = destDb.Exec(tb.dropSeqSql); err != nil {
-//					log.Error(err)
-//				}
-//				// 创建目标序列
-//				log.Info(fmt.Sprintf("%v ProcessingID %s create sequence %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(tableCount), tblName))
-//				if _, err = destDb.Exec(tb.destSeqSql); err != nil {
-//					log.Error("table ", tblName, " create sequence failed ", err)
-//					LogError(logDir, "seqCreateFailed", tb.destSeqSql, err)
-//				}
-//			}
-//
-//		}(tblName, *tb, tableCount)
-//	}
-//	// 等待所有的任务完成
-//	wg.Wait()
-//	log.Info("sequence count ", tableCount)
-//	// 如果指定-t选项，表创建完毕之后就退出程序
-//	if tableOnly {
-//		os.Exit(0)
-//	}
-//}
-
 func (tb *Table) SeqCreate(logDir string) {
 	tableCount := 0
 	var tableName string
@@ -241,11 +195,89 @@ func (tb *Table) IdxCreate(logDir string) {
 			log.Error(err)
 		}
 		// 创建目标索引，主键、其余约束
-		log.Info(fmt.Sprintf("%v ProcessingID %s create index and constraint %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), tb.destIdxSql))
+		log.Info(fmt.Sprintf("%v ProcessingID %s %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), tb.destIdxSql))
 		if _, err = destDb.Exec(tb.destIdxSql); err != nil {
 			log.Error("index ", tb.destIdxSql, " create index failed ", err)
 			LogError(logDir, "idxCreateFailed", tb.destIdxSql, err)
 		}
 	}
 	log.Info("index  count ", id)
+}
+
+func (tb *Table) FKCreate(logDir string) {
+	id := 0
+	var createSql string
+	// 查询MySQL外键，批量生成创建语句
+	sql := fmt.Sprintf("SELECT concat('ALTER TABLE ',K.TABLE_NAME,' ADD CONSTRAINT ',K.CONSTRAINT_NAME,' FOREIGN KEY(',GROUP_CONCAT(COLUMN_NAME),')',' REFERENCES ',K.REFERENCED_TABLE_NAME,'(',GROUP_CONCAT(REFERENCED_COLUMN_NAME),')',' ON DELETE ',DELETE_RULE,' ON UPDATE ',UPDATE_RULE) FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r on k.CONSTRAINT_NAME = r.CONSTRAINT_NAME where k.CONSTRAINT_SCHEMA =database() AND r.CONSTRAINT_SCHEMA=database()  and k.REFERENCED_TABLE_NAME is not null order by k.ORDINAL_POSITION;")
+	//fmt.Println(sql)
+	rows, err := srcDb.Query(sql)
+	if err != nil {
+		log.Error(err)
+	}
+	// 从sql结果集遍历，获取到创建语句
+	for rows.Next() {
+		id += 1
+		if err := rows.Scan(&createSql); err != nil {
+			log.Error(err)
+		}
+		// 创建目标外键
+		log.Info(fmt.Sprintf("%v ProcessingID %s create foreign key %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), createSql))
+		if _, err = destDb.Exec(createSql); err != nil {
+			log.Error(createSql, " create foreign key failed ", err)
+			LogError(logDir, "FkCreateFailed", createSql, err)
+		}
+	}
+	log.Info("foreign key count ", id)
+}
+
+func (tb *Table) ViewCreate(logDir string) {
+	id := 0
+	var viewName string
+	// 查询视图并拼接生成目标数据库创建视图的SQL
+	sql := fmt.Sprintf("select table_name,concat('create or replace view ',table_name,' as ',  replace(replace(replace(replace(VIEW_DEFINITION,'`',''),concat(table_schema,'.'),''),'convert(',''),'using utf8mb4)','')  ,';') create_view_sql from information_schema.VIEWS where TABLE_SCHEMA=database();")
+	rows, err := srcDb.Query(sql)
+	if err != nil {
+		log.Error(err)
+	}
+	// 从sql结果集遍历，获取到创建语句
+	for rows.Next() {
+		id += 1
+		if err := rows.Scan(&viewName, &tb.viewSql); err != nil {
+			log.Error(err)
+		}
+		// 创建目标视图
+		log.Info(fmt.Sprintf("%v ProcessingID %s create view %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), viewName))
+		if _, err = destDb.Exec(tb.viewSql); err != nil {
+			log.Error("view ", viewName, " create view failed ", err)
+			err = nil
+			LogError(logDir, "viewCreateFailed", tb.viewSql, err)
+		}
+	}
+	log.Info("view total ", id)
+}
+
+func (tb *Table) TriggerCreate(logDir string) {
+	id := 0
+	var createSql string
+	// 查询触发器，批量生成创建语句
+	sql := fmt.Sprintf("SELECT replace(upper(concat('create or replace trigger ',trigger_name,' ',action_timing,' ',event_manipulation,' on ',event_object_table,' for each row as ',action_statement)),'#','-- ') FROM information_schema.triggers WHERE trigger_schema=database();")
+	//fmt.Println(sql)
+	rows, err := srcDb.Query(sql)
+	if err != nil {
+		log.Error(err)
+	}
+	// 从sql结果集遍历，获取到创建语句
+	for rows.Next() {
+		id += 1
+		if err := rows.Scan(&createSql); err != nil {
+			log.Error(err)
+		}
+		// 创建目标触发器
+		log.Info(fmt.Sprintf("%v ProcessingID %s create trigger %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), createSql))
+		if _, err = destDb.Exec(createSql); err != nil {
+			log.Error(createSql, " create trigger failed ", err)
+			LogError(logDir, "TriggerCreateFailed", createSql, err)
+		}
+	}
+	log.Info("trigger count ", id)
 }

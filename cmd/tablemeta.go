@@ -8,12 +8,12 @@ import (
 )
 
 type Database interface {
-	TableCreate(logDir string, tableMap map[string][]string)
-	SeqCreate(logDir string)
-	IdxCreate(logDir string)
-	ViewCreate(logDir string)
-	FKCreate(logDir string)
-	TriggerCreate(logDir string)
+	TableCreate(logDir string, tableMap map[string][]string) (result []string)
+	SeqCreate(logDir string) (result []string)
+	IdxCreate(logDir string) (result []string)
+	ViewCreate(logDir string) (result []string)
+	FKCreate(logDir string) (result []string)
+	TriggerCreate(logDir string) (result []string)
 }
 
 type Table struct {
@@ -39,10 +39,12 @@ type Table struct {
 	viewSql                string
 }
 
-func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) {
+func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) (result []string) {
 	// 声明一个等待组
 	var wg sync.WaitGroup
 	tableCount := 0
+	failedCount := 0
+	startTime := time.Now()
 	// 获取tableMap键值对中的表名
 	for tblName, _ := range tableMap {
 		tableCount += 1
@@ -135,16 +137,23 @@ func (tb *Table) TableCreate(logDir string, tableMap map[string][]string) {
 			if _, err = destDb.Exec(pgCreateTbl); err != nil {
 				log.Error("table ", tblName, " create failed ", err)
 				LogError(logDir, "tableCreateFailed", pgCreateTbl, err)
+				failedCount += 1
 			}
 		}(tblName, *tb, tableCount)
 	}
 	// 等待所有的任务完成
 	wg.Wait()
+	endTime := time.Now()
+	cost := time.Since(startTime)
 	log.Info("Table structure synced from MySQL to PostgreSQL Table count ", tableCount)
+	result = append(result, "Table", startTime.Format("2006-01-02 15:04:05.000000"), endTime.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(failedCount), cost.String())
+	return result
 }
 
-func (tb *Table) SeqCreate(logDir string) {
+func (tb *Table) SeqCreate(logDir string) (result []string) {
+	startTime := time.Now()
 	tableCount := 0
+	failedCount := 0
 	var tableName string
 	// 查询MySQL自增列信息，批量生成创建序列sql
 	sql := fmt.Sprintf("select table_name,COLUMN_NAME,Auto_increment,lower(concat('drop sequence if exists ','seq_',TABLE_NAME,'_',COLUMN_NAME,';')) drop_seq,lower(concat('create sequence ','seq_',TABLE_NAME,'_',COLUMN_NAME,' INCREMENT BY 1 START ',Auto_increment,';')) create_seq, lower(concat('alter table ',table_name,' alter column ',COLUMN_NAME, ' set default nextval(', '''' ,'seq_',TABLE_NAME,'_',COLUMN_NAME,  '''',');')) alter_default  from (select Auto_increment,column_name,a.table_name from (select TABLE_NAME, Auto_increment,case when Auto_increment  is not null then 'auto_increment' else '0' end ai from information_schema. TABLES where TABLE_SCHEMA =database() and  AUTO_INCREMENT is not null) a join (select table_name,COLUMN_NAME,EXTRA from information_schema. COLUMNS where TABLE_SCHEMA =database() and table_name in(select t.TABLE_NAME from information_schema. TABLES t where TABLE_SCHEMA =database() and AUTO_INCREMENT is not null)  and EXTRA='auto_increment' ) b on a.ai = b.EXTRA and a.table_name =b.table_name) aaa;")
@@ -168,6 +177,7 @@ func (tb *Table) SeqCreate(logDir string) {
 		if _, err = destDb.Exec(tb.destSeqSql); err != nil {
 			log.Error("table ", tableName, " create sequence failed ", err)
 			LogError(logDir, "seqCreateFailed", tb.destSeqSql, err)
+			failedCount += 1
 		}
 		// 设置表自增列为序列，如果表不存并单独创建序列会有error但是毫无影响
 		log.Info(fmt.Sprintf("%v ProcessingID %s set default sequence %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(tableCount), tableName))
@@ -176,10 +186,16 @@ func (tb *Table) SeqCreate(logDir string) {
 			LogError(logDir, "seqCreateFailed", tb.destDefaultSeq, err)
 		}
 	}
+	endTime := time.Now()
+	cost := time.Since(startTime)
+	result = append(result, "Sequence", startTime.Format("2006-01-02 15:04:05.000000"), endTime.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(failedCount), cost.String())
 	log.Info("sequence count ", tableCount)
+	return result
 }
 
-func (tb *Table) IdxCreate(logDir string) {
+func (tb *Table) IdxCreate(logDir string) (result []string) {
+	startTime := time.Now()
+	failedCount := 0
 	id := 0
 	// 查询MySQL索引、主键、唯一约束等信息，批量生成创建语句
 	sql := fmt.Sprintf("SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE ', TABLE_NAME, ' ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', table_name, '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' ', table_name, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;")
@@ -199,16 +215,23 @@ func (tb *Table) IdxCreate(logDir string) {
 		if _, err = destDb.Exec(tb.destIdxSql); err != nil {
 			log.Error("index ", tb.destIdxSql, " create index failed ", err)
 			LogError(logDir, "idxCreateFailed", tb.destIdxSql, err)
+			failedCount += 1
 		}
 	}
+	endTime := time.Now()
+	cost := time.Since(startTime)
 	log.Info("index  count ", id)
+	result = append(result, "Index", startTime.Format("2006-01-02 15:04:05.000000"), endTime.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(failedCount), cost.String())
+	return result
 }
 
-func (tb *Table) FKCreate(logDir string) {
+func (tb *Table) FKCreate(logDir string) (result []string) {
+	failedCount := 0
+	startTime := time.Now()
 	id := 0
 	var createSql string
 	// 查询MySQL外键，批量生成创建语句
-	sql := fmt.Sprintf("SELECT concat('ALTER TABLE ',K.TABLE_NAME,' ADD CONSTRAINT ',K.CONSTRAINT_NAME,' FOREIGN KEY(',GROUP_CONCAT(COLUMN_NAME),')',' REFERENCES ',K.REFERENCED_TABLE_NAME,'(',GROUP_CONCAT(REFERENCED_COLUMN_NAME),')',' ON DELETE ',DELETE_RULE,' ON UPDATE ',UPDATE_RULE) FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r on k.CONSTRAINT_NAME = r.CONSTRAINT_NAME where k.CONSTRAINT_SCHEMA =database() AND r.CONSTRAINT_SCHEMA=database()  and k.REFERENCED_TABLE_NAME is not null order by k.ORDINAL_POSITION;")
+	sql := fmt.Sprintf("SELECT ifnull(concat('ALTER TABLE ',K.TABLE_NAME,' ADD CONSTRAINT ',K.CONSTRAINT_NAME,' FOREIGN KEY(',GROUP_CONCAT(COLUMN_NAME),')',' REFERENCES ',K.REFERENCED_TABLE_NAME,'(',GROUP_CONCAT(REFERENCED_COLUMN_NAME),')',' ON DELETE ',DELETE_RULE,' ON UPDATE ',UPDATE_RULE),'null') FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r on k.CONSTRAINT_NAME = r.CONSTRAINT_NAME where k.CONSTRAINT_SCHEMA =database() AND r.CONSTRAINT_SCHEMA=database()  and k.REFERENCED_TABLE_NAME is not null order by k.ORDINAL_POSITION;")
 	//fmt.Println(sql)
 	rows, err := srcDb.Query(sql)
 	if err != nil {
@@ -221,16 +244,25 @@ func (tb *Table) FKCreate(logDir string) {
 			log.Error(err)
 		}
 		// 创建目标外键
-		log.Info(fmt.Sprintf("%v ProcessingID %s create foreign key %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), createSql))
-		if _, err = destDb.Exec(createSql); err != nil {
-			log.Error(createSql, " create foreign key failed ", err)
-			LogError(logDir, "FkCreateFailed", createSql, err)
+		if createSql != "null" {
+			log.Info(fmt.Sprintf("%v ProcessingID %s create foreign key %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(id), createSql))
+			if _, err = destDb.Exec(createSql); err != nil {
+				log.Error(createSql, " create foreign key failed ", err)
+				LogError(logDir, "FkCreateFailed", createSql, err)
+				failedCount += 1
+			}
 		}
 	}
 	log.Info("foreign key count ", id)
+	endTime := time.Now()
+	cost := time.Since(startTime)
+	result = append(result, "ForeignKey", startTime.Format("2006-01-02 15:04:05.000000"), endTime.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(failedCount), cost.String())
+	return result
 }
 
-func (tb *Table) ViewCreate(logDir string) {
+func (tb *Table) ViewCreate(logDir string) (result []string) {
+	failedCount := 0
+	startTime := time.Now()
 	id := 0
 	var viewName string
 	// 查询视图并拼接生成目标数据库创建视图的SQL
@@ -251,13 +283,20 @@ func (tb *Table) ViewCreate(logDir string) {
 			log.Error("view ", viewName, " create view failed ", err)
 			err = nil
 			LogError(logDir, "viewCreateFailed", tb.viewSql, err)
+			failedCount += 1
 		}
 	}
 	log.Info("view total ", id)
+	endTime := time.Now()
+	cost := time.Since(startTime)
+	result = append(result, "View", startTime.Format("2006-01-02 15:04:05.000000"), endTime.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(failedCount), cost.String())
+	return result
 }
 
-func (tb *Table) TriggerCreate(logDir string) {
+func (tb *Table) TriggerCreate(logDir string) (result []string) {
 	id := 0
+	failedCount := 0
+	startTime := time.Now()
 	var createSql string
 	// 查询触发器，批量生成创建语句
 	sql := fmt.Sprintf("SELECT replace(upper(concat('create or replace trigger ',trigger_name,' ',action_timing,' ',event_manipulation,' on ',event_object_table,' for each row as ',action_statement)),'#','-- ') FROM information_schema.triggers WHERE trigger_schema=database();")
@@ -277,7 +316,12 @@ func (tb *Table) TriggerCreate(logDir string) {
 		if _, err = destDb.Exec(createSql); err != nil {
 			log.Error(createSql, " create trigger failed ", err)
 			LogError(logDir, "TriggerCreateFailed", createSql, err)
+			failedCount += 1
 		}
 	}
 	log.Info("trigger count ", id)
+	endTime := time.Now()
+	cost := time.Since(startTime)
+	result = append(result, "Trigger", startTime.Format("2006-01-02 15:04:05.000000"), endTime.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(failedCount), cost.String())
+	return result
 }

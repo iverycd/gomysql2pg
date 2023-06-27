@@ -20,6 +20,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	"github.com/liushuochen/gotable"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 	"gomysql2pg/connect"
@@ -88,7 +89,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	// 实例初始化，调用接口中创建目标表的方法
 	var db Database
 	db = new(Table)
-	db.TableCreate(logDir, tableMap)
+	tabRet := db.TableCreate(logDir, tableMap)
 	//db.SeqCreate(logDir, tableMap)
 	// 同时执行goroutine的数量，这里是每个表查询语句切片集合的长度
 	var goroutineSize int
@@ -99,6 +100,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	// 每个goroutine运行开始以及结束之后使用的通道，主要用于控制内层的goroutine任务与外层main线程的同步，即主线程需要等待子任务完成
 	ch := make(chan int, goroutineSize)
 	//遍历tableMap，先遍历表，再遍历该表的sql切片集合
+	migDataStart := time.Now()
 	for tableName, sqlFullSplit := range tableMap { //获取单个表名
 		colName, colType, tableNotExist := preMigData(tableName, sqlFullSplit) //获取单表的列名，列字段类型
 		if !tableNotExist {                                                    //目标表存在就执行数据迁移
@@ -110,23 +112,46 @@ func mysql2pg(connStr *connect.DbConnStr) {
 			ch <- 1
 		}
 	}
+	migDataEnd := time.Now()
+	migCost := migDataEnd.Sub(migDataStart)
+	migDataFailed := 0
 	// 这里是等待上面所有goroutine任务完成，才会执行for循环下面的动作
 	for i := 0; i < goroutineSize; i++ {
-		<-ch
+		migDataRet := <-ch
 		log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
+		if migDataRet == 1 {
+			migDataFailed += 1
+		}
 	}
+	tableDataRet := []string{"TableData", migDataStart.Format("2006-01-02 15:04:05.000000"), migDataEnd.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(migDataFailed), migCost.String()}
 	// 创建序列
-	db.SeqCreate(logDir)
+	seqRet := db.SeqCreate(logDir)
 	// 创建索引、约束
-	db.IdxCreate(logDir)
+	idxRet := db.IdxCreate(logDir)
 	// 创建外键
-	db.FKCreate(logDir)
+	fkRet := db.FKCreate(logDir)
 	// 创建视图
-	db.ViewCreate(logDir)
+	viewRet := db.ViewCreate(logDir)
 	// 创建触发器
-	db.TriggerCreate(logDir)
+	triRet := db.TriggerCreate(logDir)
 	cost := time.Since(start)
-	log.Info(fmt.Sprintf("all complete totalTime %s，the reportDir%s", cost, logDir))
+	// 输出迁移摘要
+	table, err := gotable.Create("Object", "BeginTime", "EndTime", "FailedTotal", "ElapsedTime")
+	if err != nil {
+		fmt.Println("Create table failed: ", err.Error())
+		return
+	}
+	var rowsAll = [][]string{{}}
+	rowsAll = append(rowsAll, tabRet, tableDataRet, seqRet, idxRet, fkRet, viewRet, triRet)
+	for _, r := range rowsAll {
+		//fmt.Println(r)
+		_ = table.AddRow(r)
+	}
+	table.Align("Object", 1)
+	table.Align("FailedTotal", 1)
+	table.Align("ElapsedTime", 1)
+	fmt.Println(table)
+	log.Info(fmt.Sprintf("All complete totalTime %s\nThe Report Dir %s", cost, logDir))
 }
 
 // 自动对表分析，然后生成每个表用来迁移查询源库SQL的集合(全表查询或者分页查询)

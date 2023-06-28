@@ -2,6 +2,11 @@
 
 ## change history
 
+### v0.1.3
+2023-06-28
+
+增加单独迁移表行数据的命令，迁移摘要优化，错误信息转储到日志文件优化
+
 ### v0.1.2
 2023-06-27
 
@@ -107,7 +112,7 @@ go run ./main.go  --config example.yml
 
 go run ./main.go  --config 配置文件 -s
 
-不迁移全表数据，只根据配置文件中自定义查询语句迁移数据到目标库
+不迁移全表数据，只根据配置文件中自定义查询语句迁移表结构和表数据到目标库
 ```
 go run ./main.go  --config example.yml -s
 ```
@@ -130,4 +135,23 @@ go run ./main.go  --config 配置文件 -s -t
 仅在目标库创建所有表
 ```
 go run ./main.go  --config example.yml -s -t
+```
+
+
+模式5 仅迁移全库表数据
+
+go run ./main.go  --config 配置文件 onlyData
+
+只迁移全库表行数据到目标库，仅行数据，不包括表结构
+```
+go run ./main.go  --config example.yml onlyData
+```
+
+模式6 仅迁移yml配置文件中自定义的表行数据
+
+go run ./main.go  --config 配置文件 onlyData -s
+
+只迁移配置文件中自定义查询sql，仅行数据，不包括表结构
+```
+go run ./main.go  --config example.yml onlyData -s
 ```

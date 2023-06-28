@@ -87,7 +87,7 @@ func LogError(logDir string, logName string, strContent string, errInfo error) {
 	}()
 	// create new buffer
 	buffer := bufio.NewWriter(f)
-	_, errFile = buffer.WriteString(strContent + StrVal(errInfo) + "\n")
+	_, errFile = buffer.WriteString(strContent + " -- ErrorInfo " + StrVal(errInfo) + "\n")
 	if errFile != nil {
 		log.Fatal(errFile)
 	}

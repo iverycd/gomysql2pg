@@ -184,6 +184,7 @@ func (tb *Table) SeqCreate(logDir string) (result []string) {
 		if _, err = destDb.Exec(tb.destDefaultSeq); err != nil {
 			log.Error("table ", tableName, " set default sequence failed ", err)
 			LogError(logDir, "seqCreateFailed", tb.destDefaultSeq, err)
+			failedCount += 1
 		}
 	}
 	endTime := time.Now()

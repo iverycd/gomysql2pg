@@ -90,7 +90,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	var db Database
 	db = new(Table)
 	tabRet := db.TableCreate(logDir, tableMap)
-	//db.SeqCreate(logDir, tableMap)
+	// 创建表之后，开始准备迁移表行数据
 	// 同时执行goroutine的数量，这里是每个表查询语句切片集合的长度
 	var goroutineSize int
 	//遍历每个表需要执行的切片查询SQL，累计起来获得总的goroutine并发大小
@@ -112,6 +112,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 			ch <- 1
 		}
 	}
+	// 单独计算迁移表行数据的耗时
 	migDataEnd := time.Now()
 	migCost := migDataEnd.Sub(migDataStart)
 	migDataFailed := 0
@@ -119,38 +120,45 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	for i := 0; i < goroutineSize; i++ {
 		migDataRet := <-ch
 		log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
-		if migDataRet == 1 {
+		if migDataRet == 2 {
 			migDataFailed += 1
 		}
 	}
 	tableDataRet := []string{"TableData", migDataStart.Format("2006-01-02 15:04:05.000000"), migDataEnd.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(migDataFailed), migCost.String()}
-	// 创建序列
-	seqRet := db.SeqCreate(logDir)
-	// 创建索引、约束
-	idxRet := db.IdxCreate(logDir)
-	// 创建外键
-	fkRet := db.FKCreate(logDir)
-	// 创建视图
-	viewRet := db.ViewCreate(logDir)
-	// 创建触发器
-	triRet := db.TriggerCreate(logDir)
-	cost := time.Since(start)
+	// 数据库对象的迁移结果
+	var rowsAll = [][]string{{}}
+	// 表结构创建以及数据迁移结果追加到切片,进行整合
+	rowsAll = append(rowsAll, tabRet, tableDataRet)
+	// 如果指定-s模式不创建下面对象
+	if selFromYml != true {
+		// 创建序列
+		seqRet := db.SeqCreate(logDir)
+		// 创建索引、约束
+		idxRet := db.IdxCreate(logDir)
+		// 创建外键
+		fkRet := db.FKCreate(logDir)
+		// 创建视图
+		viewRet := db.ViewCreate(logDir)
+		// 创建触发器
+		triRet := db.TriggerCreate(logDir)
+		// 以上对象迁移结果追加到切片,进行整合
+		rowsAll = append(rowsAll, seqRet, idxRet, fkRet, viewRet, triRet)
+	}
 	// 输出迁移摘要
 	table, err := gotable.Create("Object", "BeginTime", "EndTime", "FailedTotal", "ElapsedTime")
 	if err != nil {
 		fmt.Println("Create table failed: ", err.Error())
 		return
 	}
-	var rowsAll = [][]string{{}}
-	rowsAll = append(rowsAll, tabRet, tableDataRet, seqRet, idxRet, fkRet, viewRet, triRet)
 	for _, r := range rowsAll {
-		//fmt.Println(r)
 		_ = table.AddRow(r)
 	}
 	table.Align("Object", 1)
 	table.Align("FailedTotal", 1)
 	table.Align("ElapsedTime", 1)
 	fmt.Println(table)
+	// 总耗时
+	cost := time.Since(start)
 	log.Info(fmt.Sprintf("All complete totalTime %s\nThe Report Dir %s", cost, logDir))
 }
 
@@ -387,7 +395,7 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 		log.Error("prepareValues Error: ", prepareValues, err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
 		// 在copy过程中异常的表，将异常信息输出到平面文件
 		LogError(logDir, "errorTableData", StrVal(prepareValues), err)
-		ch <- 1
+		ch <- 2
 	}
 	err = stmt.Close() //关闭stmt
 	if err != nil {

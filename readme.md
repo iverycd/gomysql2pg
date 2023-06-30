@@ -2,6 +2,11 @@
 
 ## change history
 
+### v0.1.4
+2023-06-30
+
+修复只能迁移linux pg库，在Windows下迁移失败的问题，创建表的方法目前改成了单线程
+
 ### v0.1.3
 2023-06-28
 
@@ -117,28 +122,28 @@ go run ./main.go  --config 配置文件 -s
 go run ./main.go  --config example.yml -s
 ```
 
-模式3 仅创建表(全库所有表)
+模式3 迁移全库所有表结构
 
 `如果配置文件中exclude区域有配置排除表，该表也不会被创建`
 
 go run ./main.go  --config 配置文件 -t
 
-仅在目标库创建所有表
+仅在目标库创建所有表的表结构
 ```
 go run ./main.go  --config example.yml -t
 ```
 
-模式4 仅创建配置文件内容的表
+模式4 迁移自定义表的表结构
 
 go run ./main.go  --config 配置文件 -s -t
 
-仅在目标库创建所有表
+仅在目标库创建自定义的表
 ```
 go run ./main.go  --config example.yml -s -t
 ```
 
 
-模式5 仅迁移全库表数据
+模式5 迁移全库表数据
 
 go run ./main.go  --config 配置文件 onlyData
 
@@ -147,11 +152,38 @@ go run ./main.go  --config 配置文件 onlyData
 go run ./main.go  --config example.yml onlyData
 ```
 
-模式6 仅迁移yml配置文件中自定义的表行数据
+模式6 迁移自定义表数据
 
 go run ./main.go  --config 配置文件 onlyData -s
 
-只迁移配置文件中自定义查询sql，仅行数据，不包括表结构
+只迁移yml配置文件中自定义查询sql，仅行数据，不包括表结构
 ```
 go run ./main.go  --config example.yml onlyData -s
+```
+
+模式7 迁移自增列到目标序列形式
+
+go run ./main.go  --config 配置文件 seqOnly
+
+只迁移MySQL的自增列转换为目标数据库序列
+```
+go run ./main.go  --config example.yml seqOnly
+```
+
+模式8 迁移索引等约束
+
+go run ./main.go  --config 配置文件 idxOnly
+
+只迁移MySQL的主键、索引这类对象到目标数据库
+```
+go run ./main.go  --config example.yml idxOnly
+```
+
+模式9 迁移视图
+
+go run ./main.go  --config 配置文件 viewOnly
+
+只迁移MySQL的视图到目标数据库
+```
+go run ./main.go  --config example.yml viewOnly
 ```

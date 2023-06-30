@@ -51,7 +51,7 @@ func PrepareSrc(connStr *connect.DbConnStr) {
 	srcDb.SetConnMaxLifetime(2 * time.Hour)
 	srcDb.SetMaxIdleConns(0)
 	srcDb.SetMaxOpenConns(30)
-	log.Info("connect MySQL success")
+	log.Info("connect MySQL ", srcHost, " success")
 }
 
 func PrepareDest(connStr *connect.DbConnStr) {
@@ -72,7 +72,7 @@ func PrepareDest(connStr *connect.DbConnStr) {
 	if c != nil {
 		log.Fatal("connect Postgres failed", c)
 	}
-	log.Info("connect Postgres success")
+	log.Info("connect Postgres ", destHost, " success")
 }
 
 func LogError(logDir string, logName string, strContent string, errInfo error) {

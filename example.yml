@@ -10,8 +10,8 @@ dest:
   database: test
   username: test
   password: 11111
-pageSize: 10000
-maxRows: 10000
+pageSize: 100000
+maxParallel: 30
 tables:
   test1:
     - select * from test1

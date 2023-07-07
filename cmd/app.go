@@ -48,9 +48,9 @@ func PrepareSrc(connStr *connect.DbConnStr) {
 	if c != nil {
 		log.Fatal("connect MySQL failed", c)
 	}
-	srcDb.SetConnMaxLifetime(2 * time.Hour)
-	srcDb.SetMaxIdleConns(0)
-	srcDb.SetMaxOpenConns(30)
+	srcDb.SetConnMaxLifetime(2 * time.Hour) // 一个连接被使用的最长时间，过一段时间之后会被强制回收
+	srcDb.SetMaxIdleConns(0)                // 最大空闲连接数，0为不限制
+	srcDb.SetMaxOpenConns(30)               // 设置连接池最大连接数
 	log.Info("connect MySQL ", srcHost, " success")
 }
 

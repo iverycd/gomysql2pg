@@ -30,8 +30,8 @@ var log = logrus.New()
 var cfgFile string
 var selFromYml bool
 
-//var tableOnly bool
-
+var wg sync.WaitGroup
+var responseChannel = make(chan string, 1) // 设定为全局变量，用于在goroutine协程里接收copy行数据失败的计数
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "gomysql2pg",
@@ -42,6 +42,17 @@ var rootCmd = &cobra.Command{
 		connStr := getConn()
 		mysql2pg(connStr)
 	},
+}
+
+// 表行数据迁移失败的计数
+var errDataCount int
+
+// 处理全局变量通道，responseChannel，在协程的这个通道里遍历获取到copy方法失败的计数
+func response() {
+	for rc := range responseChannel {
+		fmt.Println("response:", rc)
+		errDataCount += 1
+	}
 }
 
 func mysql2pg(connStr *connect.DbConnStr) {
@@ -93,12 +104,18 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	// 创建表之后，开始准备迁移表行数据
 	// 同时执行goroutine的数量，这里是每个表查询语句切片集合的长度
 	var goroutineSize int
-	//遍历每个表需要执行的切片查询SQL，累计起来获得总的goroutine并发大小
+	//遍历每个表需要执行的切片查询SQL，累计起来获得总的goroutine并发大小，即所有goroutine协程的数量
 	for _, sqlList := range tableMap {
 		goroutineSize += len(sqlList)
 	}
 	// 每个goroutine运行开始以及结束之后使用的通道，主要用于控制内层的goroutine任务与外层main线程的同步，即主线程需要等待子任务完成
-	ch := make(chan int, goroutineSize)
+	// ch := make(chan int, goroutineSize)  //v0.1.4及之前的版本通道使用的通道，配合下面for循环遍历行数据迁移失败的计数
+	// 从yml配置文件中获取迁移数据时最大运行协程数
+	maxParallel := viper.GetInt("maxParallel")
+	// 用于控制协程goroutine运行时候的并发数,例如3个一批，3个一批的goroutine并发运行
+	ch := make(chan struct{}, maxParallel)
+	// 在协程里运行函数response，主要是从下面调用协程go runMigration的时候获取到里面迁移行数据失败的数量
+	go response()
 	//遍历tableMap，先遍历表，再遍历该表的sql切片集合
 	migDataStart := time.Now()
 	for tableName, sqlFullSplit := range tableMap { //获取单个表名
@@ -106,25 +123,30 @@ func mysql2pg(connStr *connect.DbConnStr) {
 		if !tableNotExist {                                                    //目标表存在就执行数据迁移
 			// 遍历该表的sql切片(多个分页查询或者全表查询sql)
 			for index, sqlSplitSql := range sqlFullSplit {
+				ch <- struct{}{} //在没有被接收的情况下，至多发送n个消息到通道则被阻塞，若缓存区满，则阻塞，这里相当于占位置排队
+				wg.Add(1)        // 每运行一个goroutine等待组加1
 				go runMigration(logDir, index, tableName, sqlSplitSql, ch, colName, colType)
 			}
 		} else { //目标表不存在就往通道写1
-			ch <- 1
+			log.Info("table not exists ", tableName)
 		}
 	}
 	// 单独计算迁移表行数据的耗时
 	migDataEnd := time.Now()
+	// 这里等待上面所有迁移数据的goroutine协程任务完成才会接着运行下面的主程序，如果这里不wait，上面还在迁移行数据的goroutine会被强制中断
+	wg.Wait()
 	migCost := migDataEnd.Sub(migDataStart)
-	migDataFailed := 0
+	// v0.1.4版本之前通过循环获取ch通道里写的int数据判断是否有迁移行数据失败的表，如果通道里发送的数据是2说明copy失败了
+	//migDataFailed := 0
 	// 这里是等待上面所有goroutine任务完成，才会执行for循环下面的动作
-	for i := 0; i < goroutineSize; i++ {
-		migDataRet := <-ch
-		log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
-		if migDataRet == 2 {
-			migDataFailed += 1
-		}
-	}
-	tableDataRet := []string{"TableData", migDataStart.Format("2006-01-02 15:04:05.000000"), migDataEnd.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(migDataFailed), migCost.String()}
+	//for i := 0; i < goroutineSize; i++ {
+	//	migDataRet := <-ch
+	//	log.Info("goroutine[", i, "]", " finish ", time.Now().Format("2006-01-02 15:04:05.000000"))
+	//	if migDataRet == 2 {
+	//		migDataFailed += 1
+	//	}
+	//}
+	tableDataRet := []string{"TableData", migDataStart.Format("2006-01-02 15:04:05.000000"), migDataEnd.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(errDataCount), migCost.String()}
 	// 数据库对象的迁移结果
 	var rowsAll = [][]string{{}}
 	// 表结构创建以及数据迁移结果追加到切片,进行整合
@@ -327,7 +349,8 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 }
 
 // 根据源sql查询语句，按行遍历使用copy方法迁移到目标数据库
-func runMigration(logDir string, startPage int, tableName string, sqlStr string, ch chan int, columns []string, colType []string) {
+func runMigration(logDir string, startPage int, tableName string, sqlStr string, ch chan struct{}, columns []string, colType []string) {
+	defer wg.Done()
 	log.Info(fmt.Sprintf("%v Taskid[%d] Processing TableData %v", time.Now().Format("2006-01-02 15:04:05.000000"), startPage, tableName))
 	start := time.Now()
 	// 直接查询,即查询全表或者分页查询(SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT ?, ?) temp LEFT JOIN test t ON temp.id = t.id;)
@@ -351,9 +374,10 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	}
 	stmt, err := txn.Prepare(pq.CopyIn(tableName, columns...)) //prepare里的方法CopyIn只是把copy语句拼接好并返回，并非直接执行copy
 	if err != nil {
-		log.Error("Prepare pq.CopyIn failed ", err)
-		ch <- 1 // 执行pg的copy异常就往通道写入1
-		return  // 遇到CopyIn异常就直接return
+		log.Error("txn Prepare pq.CopyIn failed ", err)
+		//ch <- 1 // 执行pg的copy异常就往通道写入1
+		<-ch   // 通道向外发送
+		return // 遇到CopyIn异常就直接return
 	}
 	var totalRow int                                   // 表总行数
 	prepareValues := make([]interface{}, len(columns)) //用于给copy方法，一行数据的切片，里面各个元素是各个列字段值
@@ -381,8 +405,12 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 		}
 		_, err = stmt.Exec(prepareValues...) //这里Exec只传入实参，即上面prepare的CopyIn所需的参数，这里理解为把stmt所有数据先存放到buffer里面
 		if err != nil {
-			log.Error("stmt.Exec(prepareValues...) failed ", err, prepareValues) // 这里是按行来的，不建议在这里输出错误信息,建议如果遇到一行错误就直接return返回
-			ch <- 1
+			log.Error("stmt.Exec(prepareValues...) failed ", tableName, " ", err, prepareValues) // 这里是按行来的，不建议在这里输出错误信息,建议如果遇到一行错误就直接return返回
+			LogError(logDir, "errorTableData", StrVal(prepareValues), err)
+			//ch <- 1
+			// 通过外部的全局变量通道获取到迁移行数据失败的计数
+			responseChannel <- fmt.Sprintf("data error %s", tableName)
+			<-ch   // 通道向外发送数据
 			return // 如果prepare异常就return
 		}
 	}
@@ -392,10 +420,13 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	}
 	_, err = stmt.Exec() //把所有的buffer进行flush，一次性写入数据
 	if err != nil {
-		log.Error("prepareValues Error: ", prepareValues, err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
+		log.Error("prepareValues Error PG Copy Failed: ", tableName, prepareValues, err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
 		// 在copy过程中异常的表，将异常信息输出到平面文件
 		LogError(logDir, "errorTableData", StrVal(prepareValues), err)
-		ch <- 2
+		//ch <- 2
+		// 通过外部的全局变量通道获取到迁移行数据失败的计数
+		responseChannel <- fmt.Sprintf("data error %s", tableName)
+		<-ch // 通道向外发送数据
 	}
 	err = stmt.Close() //关闭stmt
 	if err != nil {
@@ -411,7 +442,8 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	}
 	cost := time.Since(start) //计算时间差
 	log.Info(fmt.Sprintf("%v Taskid[%d] table %v complete,processed %d rows,execTime %s", time.Now().Format("2006-01-02 15:04:05.000000"), startPage, tableName, totalRow, cost))
-	ch <- 0
+	//ch <- 0
+	<-ch // 通道向外发送数据
 }
 
 func Execute() { // init 函数初始化之后再运行此Execute函数

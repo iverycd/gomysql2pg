@@ -166,6 +166,15 @@ func mysql2pg(connStr *connect.DbConnStr) {
 		// 以上对象迁移结果追加到切片,进行整合
 		rowsAll = append(rowsAll, seqRet, idxRet, fkRet, viewRet, triRet)
 	}
+	// 输出配置文件信息
+	tblConfig, err := gotable.Create("SourceDb", "DestDb", "MaxParallel", "PageSize")
+	if err != nil {
+		fmt.Println("Create tblConfig failed: ", err.Error())
+		return
+	}
+	ymlConfig := []string{connStr.SrcHost + "-" + connStr.SrcDatabase, connStr.DestHost + "-" + connStr.DestDatabase, strconv.Itoa(maxParallel), strconv.Itoa(pageSize)}
+	tblConfig.AddRow(ymlConfig)
+	fmt.Println(tblConfig)
 	// 输出迁移摘要
 	table, err := gotable.Create("Object", "BeginTime", "EndTime", "FailedTotal", "ElapsedTime")
 	if err != nil {

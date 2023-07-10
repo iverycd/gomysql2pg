@@ -234,7 +234,16 @@ var onlyDataCmd = &cobra.Command{
 		migDataEnd := time.Now()
 		migCost := time.Since(migDataStart)
 		tableDataRet := []string{"TableData", migDataStart.Format("2006-01-02 15:04:05.000000"), migDataEnd.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(errDataCount), migCost.String()}
-		// 输出迁移摘要
+		// 输出配置文件信息
+		tblConfig, err := gotable.Create("SourceDb", "DestDb", "MaxParallel", "PageSize")
+		if err != nil {
+			fmt.Println("Create tblConfig failed: ", err.Error())
+			return
+		}
+		ymlConfig := []string{connStr.SrcHost + "-" + connStr.SrcDatabase, connStr.DestHost + "-" + connStr.DestDatabase, strconv.Itoa(maxParallel), strconv.Itoa(pageSize)}
+		tblConfig.AddRow(ymlConfig)
+		fmt.Println(tblConfig)
+		// 数据库对象迁移后信息
 		table, err := gotable.Create("Object", "BeginTime", "EndTime", "DataErrorCount", "ElapsedTime")
 		if err != nil {
 			fmt.Println("Create table failed: ", err.Error())
@@ -245,6 +254,6 @@ var onlyDataCmd = &cobra.Command{
 		table.Align("DataErrorCount", 1)
 		table.Align("ElapsedTime", 1)
 		fmt.Println(table)
-		log.Info(fmt.Sprintf("All Table Data Finish Total Elapsed TIme %s\nThe Report Dir %s", migCost, logDir))
+		log.Info(fmt.Sprintf("All Table Data Finish Total Elapsed TIme %s The Report Dir %s", migCost, logDir))
 	},
 }

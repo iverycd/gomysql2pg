@@ -24,6 +24,8 @@
 支持Windows、Linux、MacOS
 
 ### 1.3 如何安装
+current release v0.1.7
+
 解压之后即可运行此工具
 
 若在Linux环境下请使用unzip解压，例如：

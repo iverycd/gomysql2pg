@@ -31,6 +31,7 @@ var cfgFile string
 var selFromYml bool
 
 var wg sync.WaitGroup
+var wg2 sync.WaitGroup
 var responseChannel = make(chan string, 1) // 设定为全局变量，用于在goroutine协程里接收copy行数据失败的计数
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -100,7 +101,23 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	// 实例初始化，调用接口中创建目标表的方法
 	var db Database
 	db = new(Table)
-	tabRet := db.TableCreate(logDir, tableMap)
+	// 从yml配置文件中获取迁移数据时最大运行协程数
+	maxParallel := viper.GetInt("maxParallel")
+	// 用于控制协程goroutine运行时候的并发数,例如3个一批，3个一批的goroutine并发运行
+	ch := make(chan struct{}, maxParallel)
+	startTbl := time.Now()
+	for tableName := range tableMap { //获取单个表名
+		ch <- struct{}{}
+		wg2.Add(1)
+		go db.TableCreate(logDir, tableName, ch)
+	}
+	wg2.Wait()
+	endTbl := time.Now()
+	tableCost := time.Since(startTbl)
+	// 创建表完毕
+	log.Info("Table structure synced from MySQL to PostgreSQL ,Source Table Total ", tableCount, " Failed Total ", strconv.Itoa(failedCount))
+	tabRet = append(tabRet, "Table", startTbl.Format("2006-01-02 15:04:05.000000"), endTbl.Format("2006-01-02 15:04:05.000000"), strconv.Itoa(failedCount), tableCost.String())
+	fmt.Println("Table Create finish elapsed time ", tableCost)
 	// 创建表之后，开始准备迁移表行数据
 	// 同时执行goroutine的数量，这里是每个表查询语句切片集合的长度
 	var goroutineSize int
@@ -110,10 +127,6 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	}
 	// 每个goroutine运行开始以及结束之后使用的通道，主要用于控制内层的goroutine任务与外层main线程的同步，即主线程需要等待子任务完成
 	// ch := make(chan int, goroutineSize)  //v0.1.4及之前的版本通道使用的通道，配合下面for循环遍历行数据迁移失败的计数
-	// 从yml配置文件中获取迁移数据时最大运行协程数
-	maxParallel := viper.GetInt("maxParallel")
-	// 用于控制协程goroutine运行时候的并发数,例如3个一批，3个一批的goroutine并发运行
-	ch := make(chan struct{}, maxParallel)
 	// 在协程里运行函数response，主要是从下面调用协程go runMigration的时候获取到里面迁移行数据失败的数量
 	go response()
 	//遍历tableMap，先遍历表，再遍历该表的sql切片集合
@@ -167,12 +180,14 @@ func mysql2pg(connStr *connect.DbConnStr) {
 		rowsAll = append(rowsAll, seqRet, idxRet, fkRet, viewRet, triRet)
 	}
 	// 输出配置文件信息
-	tblConfig, err := gotable.Create("SourceDb", "DestDb", "MaxParallel", "PageSize")
+	fmt.Println("------------------------------------------------------------------------------------------------------------------------------")
+	Info()
+	tblConfig, err := gotable.Create("SourceDb", "DestDb", "MaxParallel", "PageSize", "ExcludeCount")
 	if err != nil {
 		fmt.Println("Create tblConfig failed: ", err.Error())
 		return
 	}
-	ymlConfig := []string{connStr.SrcHost + "-" + connStr.SrcDatabase, connStr.DestHost + "-" + connStr.DestDatabase, strconv.Itoa(maxParallel), strconv.Itoa(pageSize)}
+	ymlConfig := []string{connStr.SrcHost + "-" + connStr.SrcDatabase, connStr.DestHost + "-" + connStr.DestDatabase, strconv.Itoa(maxParallel), strconv.Itoa(pageSize), strconv.Itoa(len(excludeTab))}
 	tblConfig.AddRow(ymlConfig)
 	fmt.Println(tblConfig)
 	// 输出迁移摘要
@@ -190,7 +205,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	fmt.Println(table)
 	// 总耗时
 	cost := time.Since(start)
-	log.Info(fmt.Sprintf("All complete totalTime %s\nThe Report Dir %s", cost, logDir))
+	log.Info(fmt.Sprintf("All complete totalTime %s The Report Dir %s", cost, logDir))
 }
 
 // 自动对表分析，然后生成每个表用来迁移查询源库SQL的集合(全表查询或者分页查询)

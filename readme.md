@@ -187,6 +187,17 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ## change history
 
+### v0.1.7
+2023-07-11
+
+使用多个goroutine并发创建表，迁移摘要信息优化
+
+### v0.1.6
+2023-07-10
+
+Add Makefile and output config info
+
+
 ### v0.1.5
 2023-07-07
 
@@ -263,117 +274,3 @@ config文件增加端口设定,自定义sql外面包了一层select * from (自�
 2023-05-23
 
 log方法打印调用文件以及方法源行数，增加日志重定向到平面文件
-
-## 一、简介
-迁移MySQL数据库表数据到目标postgresql数据库，迁移时会使用多个goroutine并发的读取以及写入数据
-
-## 二、使用方法
-### 2.1 编辑yml配置文件
-
-编辑`example.cfg`文件，输入
-
-```yaml
-src:
-  host: 192.168.1.3  # 源库ip
-  database: test  # 源库数据库名
-  username: root
-  password: 11111
-dest:
-  host: 192.168.1.200  # 目标ip
-  database: test  # 目标数据库名称
-  username: test  # 目标用户名
-  password: 11111
-maxRows: 10000
-tables:  # 要迁移的表名，按顺序列出
-  test1:  # 要迁移的表名
-    - select * from test1  # 查询源表的SQL语句
-  test2:
-    - select * from test2
-exclude:
-```
-
-### 2.2 迁移模式指定
-
-模式1 全库行数据迁移
-
-go run ./main.go  --config 配置文件
-
-根据配置文件源库以及目标的信息(会忽略配置文件中自定义查询SQL语句)，查找源库的所有表，全表行数据迁移到pg目标库
-```
-go run ./main.go  --config example.yml
-```
-
-模式2 自定义SQL查询迁移
-
-go run ./main.go  --config 配置文件 -s
-
-不迁移全表数据，只根据配置文件中自定义查询语句迁移表结构和表数据到目标库
-```
-go run ./main.go  --config example.yml -s
-```
-
-模式3 迁移全库所有表结构
-
-`如果配置文件中exclude区域有配置排除表，该表也不会被创建`
-
-go run ./main.go  --config 配置文件 -t
-
-仅在目标库创建所有表的表结构
-```
-go run ./main.go  --config example.yml -t
-```
-
-模式4 迁移自定义表的表结构
-
-go run ./main.go  --config 配置文件 -s -t
-
-仅在目标库创建自定义的表
-```
-go run ./main.go  --config example.yml -s -t
-```
-
-
-模式5 迁移全库表数据
-
-go run ./main.go  --config 配置文件 onlyData
-
-只迁移全库表行数据到目标库，仅行数据，不包括表结构
-```
-go run ./main.go  --config example.yml onlyData
-```
-
-模式6 迁移自定义表数据
-
-go run ./main.go  --config 配置文件 onlyData -s
-
-只迁移yml配置文件中自定义查询sql，仅行数据，不包括表结构
-```
-go run ./main.go  --config example.yml onlyData -s
-```
-
-模式7 迁移自增列到目标序列形式
-
-go run ./main.go  --config 配置文件 seqOnly
-
-只迁移MySQL的自增列转换为目标数据库序列
-```
-go run ./main.go  --config example.yml seqOnly
-```
-
-模式8 迁移索引等约束
-
-go run ./main.go  --config 配置文件 idxOnly
-
-只迁移MySQL的主键、索引这类对象到目标数据库
-```
-go run ./main.go  --config example.yml idxOnly
-```
-
-模式9 迁移视图
-
-go run ./main.go  --config 配置文件 viewOnly
-
-只迁移MySQL的视图到目标数据库
-```
-go run ./main.go  --config example.yml viewOnly
-```

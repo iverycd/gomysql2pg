@@ -1,47 +1,45 @@
 # gomysql2pg
 
-## 一、工具特性以及环境要求
-### 1.1 功能特性
+([中文介绍文档](https://github.com/iverycd/gomysql2pg/blob/master/readme_cn.md))
 
-  支持MySQL数据库一键迁移到postgresql内核类型的目标数据库，如postgresql数据库、海量数据库vastbase、华为postgresql、电信telepg、人大金仓Kingbase V8R6等
+## Features
+  MySQL database migration to postgresql kernel database,such as postgresql(pgsql),vastbase,Huawei postgresql,telepg,Kingbase V8R6
 
-- 无需繁琐部署，开箱即用，小巧轻量化
+* No need for cumbersome deployment, ready to use out of the box, compact and lightweight
 
-- 在线迁移MySQL到目标数据库的表、视图、索引、外键、自增列等对象
+* Online migration of MySQL to target database tables, views, indexes, foreign keys, self increasing columns, and other objects
 
-- 多个goroutine并发迁移数据，充分利用CPU多核性能
+* Multiple goroutines migrate data concurrently, fully utilizing CPU multi-core performance
 
-- 支持迁移源库部分表功能
+* Migrate Partial Tables and row data
 
-- 记录迁移日志，转储表、视图等DDL对象创建失败的sql语句
+* Record migration logs, dump SQL statements for DDL object creation failures such as tables and views
 
-- 一键迁移MySQL到postgresql，方便快捷，轻松使用
-
-
-### 1.2 环境要求
-在运行的客户端PC需要同时能连通源端MySQL数据库以及目标数据库
-
-支持Windows、Linux、MacOS
-
-### 1.3 如何安装
-current release v0.1.7
-
-解压之后即可运行此工具
-
-若在Linux环境下请使用unzip解压，例如：
+* One click migration of MySQL to postgreSQL, convenient, fast, and easy to use
 
 
-`[root@localhost opt]# unzip gomysql2pg.zip`
+## Pre-requirement
+The running client PC needs to be able to connect to both the source MySQL database and the target database simultaneously
 
-## 二、使用方法
+run on Windows,Linux,macOS
 
-以下为Windows平台示例，其余操作系统命令行参数一样
+## Installation
 
-`注意:`在`Windows`系统请在`CMD`运行此工具，如果是在`MacOS`或者`Linux`系统，请在有读写权限的目录运行
+tar and run 
 
-### 2.1 编辑yml配置文件
+e.g.
 
-编辑`example.cfg`文件，分别输入源库跟目标数据库信息
+`[root@localhost opt]# tar -zxvf gomysql2pg-linux64-0.1.7.tar.gz`
+
+## How to use
+
+The following is an example of a Windows platform, with the same command-line parameters as other operating systems
+
+`Note`: Please run this tool in `CMD` on a `Windows` system, or in a directory with read and write permissions on `MacOS` or `Linux`
+
+### 1 Edit yml configuration file
+
+Edit the `example.cfg` file and input the source(src) and target(dest) database information separately
 
 ```yaml
 src:
@@ -70,120 +68,158 @@ exclude:
 
 ```
 
-
-### 2.2 全库迁移
-
-迁移全库表结构、行数据，视图、索引约束、自增列等对象
-
-gomysql2pg.exe  --config 配置文件
+pageSize: Number of records per page for pagination query
 ```
-示例
+e.g.
+pageSize:100000
+SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOIN test t ON temp.id = t.id;
+```
+maxParallel: The maximum number of concurrency that can run goroutine simultaneously
+
+tables: Customized migrated tables and customized query source tables, indented in yml format
+
+exclude: Tables that do not migrate to target database, indented in yml format
+
+
+### 2 Full database migration
+
+Migrate entire database table structure, row data, views, index constraints, and self increasing columns to target database
+
+gomysql2pg.exe  --config file.yml
+```
+e.g.
+gomysql2pg.exe --config example.yml
+
+on Linux and MacOS you can run
+./gomysql2pg --config example.yml
+```
+
+### 3 View Migration Summary
+
+After the entire database migration is completed, a migration summary will be generated to observe if there are any failed objects. By querying the migration log, the failed objects can be analyzed
+
+```bash
++-------------------------+---------------------+-------------+----------+
+|        SourceDb         |       DestDb        | MaxParallel | PageSize |
++-------------------------+---------------------+-------------+----------+
+| 192.168.149.37-sourcedb | 192.168.149.33-test |     30      |  100000  |
++-------------------------+---------------------+-------------+----------+
+
++------------+----------------------------+----------------------------+-------------+---------------+
+|Object      |         BeginTime          |          EndTime           |FailedTotal  |ElapsedTime    |
++------------+----------------------------+----------------------------+-------------+---------------+
+|TableData   | 2023-07-11 12:23:55.584092 | 2023-07-11 12:28:44.105372 |6            |4m48.5212802s  |
+|Sequence    | 2023-07-11 12:30:04.697570 | 2023-07-11 12:30:12.549534 |1            |7.8519647s     |
+|Index       | 2023-07-11 12:30:12.549534 | 2023-07-11 12:33:45.312366 |5            |3m32.7628317s  |
+|ForeignKey  | 2023-07-11 12:33:45.312366 | 2023-07-11 12:34:00.413767 |0            |15.1014013s    |
+|View        | 2023-07-11 12:34:00.413767 | 2023-07-11 12:34:01.240472 |14           |826.705ms      |
+|Trigger     | 2023-07-11 12:34:01.240472 | 2023-07-11 12:34:01.339078 |1            |98.6061ms      |
++------------+----------------------------+----------------------------+-------------+---------------+
+
+Table Create finish elapsed time  5.0256021s
+time="2023-07-11T12:34:01+08:00" level=info msg="All complete totalTime 10m30.1667987s\nThe Report Dir C:\\go\\src\\gomysql2pg\\2023_07_11_12_23_31" func=gomysql2pg/cmd.mysql2pg file="C:/go/src/gomysql2pg/cmd/root.go:207"
+
+```
+
+
+## Other migration modes
+
+In addition to migrating the entire database, the tool also supports the migration of some database objects, such as partial table structures, views, self increasing columns, indexes, and so on
+
+
+#### 1 Full database migration
+
+Migrate entire database table structure, row data, views, index constraints, and self increasing columns to target database
+
+gomysql2pg.exe  --config file.yml
+
+```
+e.g.
 gomysql2pg.exe --config example.yml
 ```
 
-### 2.3 查看迁移摘要
+#### 2 Custom SQL Query Migration
 
-全库迁移完成之后会生成迁移摘要，观察下是否有失败的对象，通过查询迁移日志可对迁移失败的对象进行分析
-
-
-### 2.4 其他迁移模式
-
-除了迁移全库之外，工具还支持迁移部分数据库对象，如部分表结构，视图，自增列，索引等对象
-
-
-#### 2.4.1 全库迁移
-
-迁移全库表结构、行数据，视图、索引约束、自增列等对象
-
-gomysql2pg.exe  --config 配置文件
+only migrate some tables not entire database, and migrate the table structure and table data to the target database according to the custom query statement in file.yml
+gomysql2pg.exe  --config file.yml -s
 
 ```
-示例
-gomysql2pg.exe --config example.yml
-```
-
-#### 2.4.2 自定义SQL查询迁移
-
-不迁移全库数据，只迁移部分表，根据配置文件中自定义查询语句迁移表结构和表数据到目标库
-gomysql2pg.exe  --config 配置文件 -s
-
-```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml -s
 ```
 
-#### 2.4.3 迁移全库所有表结构
+#### 3 Migrate all table structures in the entire database
 
-仅在目标库创建所有表的表结构
+Create all table structure(only table metadata not row data) to  target database
 
-gomysql2pg.exe  --config 配置文件 -t
+gomysql2pg.exe  --config file.yml -t
 
 ```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml -t
 ```
 
-#### 2.4.4 迁移自定义表的表结构
+#### 4 Migrate the table structure of custom tables
 
-仅在目标库创建自定义的表
+Read custom tables from yml file and create target table 
 
-gomysql2pg.exe  --config 配置文件 -s -t
+gomysql2pg.exe  --config file.yml -s -t
 
 ```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml -s -t
 ```
 
 
-#### 2.4.5 迁移全库表数据
+#### 5 Migrate full database table data
 
-只迁移全库表行数据到目标库，仅行数据，不包括表结构
+Only migrate the entire database table row data to the target database, only row data, not contain table structure
 
-gomysql2pg.exe  --config 配置文件 onlyData
+gomysql2pg.exe  --config file.yml onlyData
 ```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml onlyData
 ```
 
-#### 2.4.6 迁移自定义表数据
+#### 6 Migrate custom table data
 
-只迁移yml配置文件中自定义查询sql，仅行数据，不包括表结构
+Only migrate custom query SQL from yml file, only row data, not contain table structure
 
-gomysql2pg.exe  --config 配置文件 onlyData -s
+gomysql2pg.exe  --config file.yml onlyData -s
 
 ```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml onlyData -s
 ```
 
-#### 2.4.7 迁移自增列到目标序列形式
+#### 7 Migrate self increasing columns to the target sequence
 
-只迁移MySQL的自增列转换为目标数据库序列
-gomysql2pg.exe  --config 配置文件 seqOnly
+Only migrate MySQL's autoincrement columns to target database sequences
+gomysql2pg.exe  --config file.yml seqOnly
 
 ```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml seqOnly
 ```
 
-#### 2.4.8 迁移索引等约束
+#### 8 Migrate index and primary key
 
-只迁移MySQL的主键、索引这类对象到目标数据库
-gomysql2pg.exe  --config 配置文件 idxOnly
+Only migrate MySQL primary keys, indexes, and other objects to the target database
+gomysql2pg.exe  --config file.yml idxOnly
 
 ```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml idxOnly
 ```
 
-#### 2.4.9 迁移视图
+#### 9 Migration View
 
-只迁移MySQL的视图到目标数据库
+Only migrate MySQL views to the target database
 
-gomysql2pg.exe  --config 配置文件 viewOnly
+gomysql2pg.exe  --config file.yml viewOnly
 
 ```
-示例
+e.g.
 gomysql2pg.exe  --config example.yml viewOnly
 ```
 
@@ -192,7 +228,7 @@ gomysql2pg.exe  --config example.yml viewOnly
 ### v0.1.7
 2023-07-11
 
-使用多个goroutine并发创建表，迁移摘要信息优化
+Using multiple goroutines to create tables concurrently and optimize migration summary information
 
 ### v0.1.6
 2023-07-10
@@ -203,76 +239,76 @@ Add Makefile and output config info
 ### v0.1.5
 2023-07-07
 
-增加全局变量通道处理迁移行数据失败的计数，会在迁移摘要中展示
+Increase the count of the Global variable channel's failure to process the migration row data, which will be shown in the migration summary
 
 ### v0.1.4
 2023-06-30
 
-修复只能迁移linux pg库，在Windows下迁移失败的问题，创建表的方法目前改成了单线程
+Fixed the issue of only migrating Linux pg libraries and failing to migrate under Windows. The method of creating tables has now been changed to single threaded
 
 ### v0.1.3
 2023-06-28
 
-增加单独迁移表行数据的命令，迁移摘要优化，错误信息转储到日志文件优化
+Add commands to separately migrate table row data, optimize migration summary, and dump error information to log files for optimization
 
 ### v0.1.2
 2023-06-27
 
-增加迁移摘要，完善创建有外键的约束
+Add migration summary and improve constraints for creating foreign keys
 
 ### v0.1.1
 2023-06-26
 
-增加创建视图、外键、触发器到目标数据库
+Add migration summary and improve constraints for creating foreign keys
 
 
 ### v0.1.0
 2023-06-16
 
-增加创建索引、主键、等约束
+Add constraints such as creating indexes, primary keys, etc
 
 ### v0.0.9
 2023-06-14
 
-新增创建序列
+Add Create Sequence
 
 
 ### v0.0.8
 2023-06-13
 
-使用多个goroutine并发生成每个表的迁移任务、创建表，其余优化
+Add a creation sequence that uses multiple goroutines to concurrently generate migration tasks for each table, create tables, and optimize the rest
 
 ### v0.0.7
 2023-06-12
 
-修复prepareSqlStr中没有行数据被漏掉创建的表,迁移数据前会查询下目标表是否存在,其余优化
+Fix the table created without missing row data in prepareSqlStr. Before migrating data, check if the target table exists, and optimize the rest
 
 ### v0.0.6
 2023-06-09
 
-增加创建基本表的功能
+Add create table metadata to target database
 
 ### v0.0.5
 2023-06-06
 
-增加标题字符图，显示版本信息,彩色文字显示输出
+Add a title character map, display version information, and output color text display
 
 ### v0.0.4
 2023-06-05
 
-在遇到Ctrl+c输入后主动关闭数据库正在运行的sql,输出格式简化,转储迁移失败的表数据到日志目录
+After encountering Ctrl+c input, proactively close the running SQL of the database, simplify the output format, and dump the table data that failed the migration to the log directory
 
 ### v0.0.3
 2023-06-02
 
-config文件增加端口设定,自定义sql外面包了一层select * from (自定义sql) where 1=0 用于获取列字段，避免查询全表数据,在copy方法的exec刷buffer之前，再一次主动使用row.close关闭数据库连接
+The config file adds port settings, and a layer of select * from (custom SQL) is added outside the custom SQL, where 1=0 is used to obtain column fields to avoid querying the entire table data. Before using the exec buffer of the copy method, the database connection is actively closed again using row.close
 
 ### v0.0.2
 2023-05-24
 
-增加排除表参数，以及config yml文件配置异常检查
+Add exclusion table parameters and check for abnormal configuration in the config yml file
 
 ### v0.0.1
 2023-05-23
 
-log方法打印调用文件以及方法源行数，增加日志重定向到平面文件
+The log method prints the calling file and the number of method source lines, increasing the redirection of logs to a flat file

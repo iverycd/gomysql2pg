@@ -281,7 +281,7 @@ func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]s
 func preMigData(tableName string, sqlFullSplit []string) (dbCol []string, dbColType []string, tableNotExist bool) {
 	var sqlCol string
 	// 在写数据前，先清空下目标表数据
-	truncateSql := "truncate table " + tableName
+	truncateSql := "truncate table " + fmt.Sprintf("\"") + tableName + fmt.Sprintf("\"")
 	if _, err := destDb.Exec(truncateSql); err != nil {
 		log.Error("truncate ", tableName, " failed   ", err)
 		tableNotExist = true
@@ -292,7 +292,7 @@ func preMigData(tableName string, sqlFullSplit []string) (dbCol []string, dbColT
 	if selFromYml {
 		sqlCol = "select * from (" + sqlFullSplit[0] + " )aa where 1=0;" // 在自定义sql外层套一个select * from (自定义sql) where 1=0
 	} else {
-		sqlCol = "select * from " + tableName + " where 1=0;"
+		sqlCol = "select * from " + "`" + tableName + "`" + " where 1=0;"
 	}
 	rows, err := srcDb.Query(sqlCol) //源库 SQL查询语句
 	defer rows.Close()
@@ -341,7 +341,7 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 	}
 	// 没有主键，就返回全表扫描的sql语句,即使这个表没有数据，迁移也不影响，测试通过
 	if colFullPk == nil {
-		sqlList = append(sqlList, "select * from "+tableName)
+		sqlList = append(sqlList, "select * from "+"`"+tableName+"`")
 		return sqlList
 	}
 	// 遍历主键集合，使用逗号隔开,生成主键列或者组合，以及join on的连接字段
@@ -357,7 +357,7 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 		}
 	}
 	// 如果有主键,根据当前表总数以及每页的页记录大小pageSize，自动计算需要多少页记录数，即总共循环多少次，如果表没有数据，后面判断下切片长度再做处理
-	sql2 := "/* gomysql2pg */" + "select ceil(count(*)/" + strconv.Itoa(pageSize) + ") as total_page_num from " + tableName
+	sql2 := "/* gomysql2pg */" + "select ceil(count(*)/" + strconv.Itoa(pageSize) + ") as total_page_num from " + "`" + tableName + "`"
 	//以下是直接使用QueryRow
 	err = srcDb.QueryRow(sql2).Scan(&totalPageNum)
 	if err != nil {
@@ -366,7 +366,7 @@ func prepareSqlStr(tableName string, pageSize int) (sqlList []string) {
 	}
 	// 以下生成分页查询语句
 	for i := 0; i <= totalPageNum; i++ { // 使用小于等于，包含没有行数据的表
-		sqlStr = "SELECT t.* FROM (SELECT " + buffer1.String() + " FROM " + tableName + " ORDER BY " + buffer1.String() + " LIMIT " + strconv.Itoa(i*pageSize) + "," + strconv.Itoa(pageSize) + ") temp LEFT JOIN " + tableName + " t ON " + buffer2.String() + ";"
+		sqlStr = "SELECT t.* FROM (SELECT " + buffer1.String() + " FROM " + "`" + tableName + "`" + " ORDER BY " + buffer1.String() + " LIMIT " + strconv.Itoa(i*pageSize) + "," + strconv.Itoa(pageSize) + ") temp LEFT JOIN " + "`" + tableName + "`" + " t ON " + buffer2.String() + ";"
 		sqlList = append(sqlList, strings.ToLower(sqlStr))
 	}
 	return sqlList

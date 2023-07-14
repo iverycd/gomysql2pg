@@ -49,7 +49,7 @@ func (tb *Table) TableCreate(logDir string, tblName string, ch chan struct{}) {
 	tableCount += 1
 	// 使用goroutine并发的创建多个表
 	var colTotal int
-	pgCreateTbl := "create table " + tblName + "("
+	pgCreateTbl := "create table " + fmt.Sprintf("\"") + tblName + fmt.Sprintf("\"") + "("
 	// 查询当前表总共有多少个列字段
 	colTotalSql := fmt.Sprintf("select count(*) from information_schema.COLUMNS  where table_schema=database() and table_name='%s'", tblName)
 	err := srcDb.QueryRow(colTotalSql).Scan(&colTotal)
@@ -122,14 +122,14 @@ func (tb *Table) TableCreate(logDir string, tblName string, ch chan struct{}) {
 	}
 	//fmt.Println(pgCreateTbl) // 打印创建表语句
 	// 创建前先删除目标表
-	dropDestTbl := "drop table if exists " + tblName + " cascade"
+	dropDestTbl := "drop table if exists " + fmt.Sprintf("\"") + tblName + fmt.Sprintf("\"") + " cascade"
 	if _, err = destDb.Exec(dropDestTbl); err != nil {
-		log.Error(err)
+		log.Error("drop table ", tblName, " failed ", err)
 	}
 	// 创建PostgreSQL表结构
-	log.Info(fmt.Sprintf("%v ProcessingID %s create table %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(tableCount), tblName))
+	log.Info(fmt.Sprintf("%v Table total %s create table %s", time.Now().Format("2006-01-02 15:04:05.000000"), strconv.Itoa(tableCount), tblName))
 	if _, err = destDb.Exec(pgCreateTbl); err != nil {
-		log.Error("table ", tblName, " create failed ", err)
+		log.Error("table ", tblName, " create failed  ", err)
 		LogError(logDir, "tableCreateFailed", pgCreateTbl, err)
 		failedCount += 1
 	}
@@ -185,7 +185,7 @@ func (tb *Table) IdxCreate(logDir string) (result []string) {
 	failedCount := 0
 	id := 0
 	// 查询MySQL索引、主键、唯一约束等信息，批量生成创建语句
-	sql := fmt.Sprintf("SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE ', TABLE_NAME, ' ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', table_name, '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' ', table_name, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;")
+	sql := fmt.Sprintf("SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE \"', TABLE_NAME, '\" ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON \"', table_name, '\"(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' \"', table_name, '\"' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;")
 	//fmt.Println(sql)
 	rows, err := srcDb.Query(sql)
 	if err != nil {
@@ -217,17 +217,25 @@ func (tb *Table) FKCreate(logDir string) (result []string) {
 	startTime := time.Now()
 	id := 0
 	var createSql string
+	var fkTable string
 	// 查询MySQL外键，批量生成创建语句
-	sql := fmt.Sprintf("SELECT ifnull(concat('ALTER TABLE ',K.TABLE_NAME,' ADD CONSTRAINT ',K.CONSTRAINT_NAME,' FOREIGN KEY(',GROUP_CONCAT(COLUMN_NAME),')',' REFERENCES ',K.REFERENCED_TABLE_NAME,'(',GROUP_CONCAT(REFERENCED_COLUMN_NAME),')',' ON DELETE ',DELETE_RULE,' ON UPDATE ',UPDATE_RULE),'null') FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r on k.CONSTRAINT_NAME = r.CONSTRAINT_NAME where k.CONSTRAINT_SCHEMA =database() AND r.CONSTRAINT_SCHEMA=database()  and k.REFERENCED_TABLE_NAME is not null order by k.ORDINAL_POSITION;")
+	//sql := fmt.Sprintf("SELECT ifnull(concat('ALTER TABLE \"',K.TABLE_NAME,'\" ADD CONSTRAINT ',K.CONSTRAINT_NAME,' FOREIGN KEY(',GROUP_CONCAT(COLUMN_NAME),')',' REFERENCES \"',K.REFERENCED_TABLE_NAME,'\"(',GROUP_CONCAT(REFERENCED_COLUMN_NAME),')',' ON DELETE ',DELETE_RULE,' ON UPDATE ',UPDATE_RULE),'null') FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r on k.CONSTRAINT_NAME = r.CONSTRAINT_NAME where k.CONSTRAINT_SCHEMA =database() AND r.CONSTRAINT_SCHEMA=database()  and k.REFERENCED_TABLE_NAME is not null order by k.ORDINAL_POSITION;")
+	// 先获取有外键的表名
+	sql := fmt.Sprintf("select  table_name from INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS where CONSTRAINT_SCHEMA =database();")
 	//fmt.Println(sql)
 	rows, err := srcDb.Query(sql)
 	if err != nil {
 		log.Error(err)
 	}
-	// 从sql结果集遍历，获取到创建语句
+	// 从sql结果集遍历，获取到单个表外键的创建语句
 	for rows.Next() {
 		id += 1
-		if err := rows.Scan(&createSql); err != nil {
+		if err := rows.Scan(&fkTable); err != nil {
+			log.Error(err)
+		}
+		sql = fmt.Sprintf("SELECT ifnull(concat('ALTER TABLE \"',K.TABLE_NAME,'\" ADD CONSTRAINT ',K.CONSTRAINT_NAME,' FOREIGN KEY(',GROUP_CONCAT(COLUMN_NAME),')',' REFERENCES \"',K.REFERENCED_TABLE_NAME,'\"(',GROUP_CONCAT(REFERENCED_COLUMN_NAME),')',' ON DELETE ',DELETE_RULE,' ON UPDATE ',UPDATE_RULE),'null') FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k INNER JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r on k.CONSTRAINT_NAME = r.CONSTRAINT_NAME where k.CONSTRAINT_SCHEMA =database() AND r.CONSTRAINT_SCHEMA=database()  and k.REFERENCED_TABLE_NAME is not null and k.table_name='%s'  order by k.ORDINAL_POSITION;", fkTable)
+		err := srcDb.QueryRow(sql).Scan(&createSql) // 根据单个表获取外键拼接sql
+		if err != nil {
 			log.Error(err)
 		}
 		// 创建目标外键
@@ -286,7 +294,7 @@ func (tb *Table) TriggerCreate(logDir string) (result []string) {
 	startTime := time.Now()
 	var createSql string
 	// 查询触发器，批量生成创建语句
-	sql := fmt.Sprintf("SELECT replace(upper(concat('create or replace trigger ',trigger_name,' ',action_timing,' ',event_manipulation,' on ',event_object_table,' for each row as ',action_statement)),'#','-- ') FROM information_schema.triggers WHERE trigger_schema=database();")
+	sql := fmt.Sprintf("SELECT replace(lower(concat('create or replace trigger ',trigger_name,' ',action_timing,' ',event_manipulation,' on \"',event_object_table,'\" for each row as ',action_statement)),'#','-- ') FROM information_schema.triggers WHERE trigger_schema=database();")
 	//fmt.Println(sql)
 	rows, err := srcDb.Query(sql)
 	if err != nil {

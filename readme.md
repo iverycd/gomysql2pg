@@ -1,9 +1,9 @@
 # gomysql2pg
 
-([中文介绍文档](https://github.com/iverycd/gomysql2pg/blob/master/readme_cn.md))
+([CN](https://github.com/iverycd/gomysql2pg/blob/master/readme_cn.md))
 
 ## Features
-  MySQL database migration to postgresql kernel database,such as postgresql(pgsql),vastbase,Huawei postgresql,telepg,Kingbase V8R6
+  MySQL database migration to postgresql kernel database,such as postgresql(pgsql),vastbase,Huawei postgresql,GaussDB,telepg,Kingbase V8R6
 
 * No need for cumbersome deployment, ready to use out of the box, compact and lightweight
 
@@ -121,6 +121,41 @@ time="2023-07-11T12:34:01+08:00" level=info msg="All complete totalTime 10m30.16
 
 ```
 
+### 4 Compare Source and Target database
+
+After migration finish you can compare source table and target database table rows,displayed failed table only
+
+`gomysql2pg.exe --config your_file.yml compareDb`
+
+```
+e.g.
+gomysql2pg.exe --config example.yml compareDb
+
+on Linux and MacOS you can run
+./gomysql2pg --config example.yml compareDb
+```
+
+```bash
+Table Compare Result (Only Not Ok Displayed)
++-----------------------+------------+----------+-------------+------+
+|Table                  |SourceRows  |DestRows  |DestIsExist  |isOk  |
++-----------------------+------------+----------+-------------+------+
+|abc_testinfo           |7458        |0         |YES          |NO    |
+|log1_qweharddiskweqaz  |0           |0         |NO           |NO    |
+|abcdef_jkiu_button     |4           |0         |YES          |NO    |
+|abcdrf_yuio            |5           |0         |YES          |NO    |
+|zzz_ss_idcard          |56639       |0         |YES          |NO    |
+|asdxz_uiop             |290497      |190497    |YES          |NO    |
+|abcd_info              |1052258     |700000    |YES          |NO    |
++-----------------------+------------+----------+-------------+------+ 
+INFO[0040] Table Compare finish elapsed time 11.307881434s 
+```
+
+
+
+
+
+
 
 ## Other migration modes
 
@@ -224,6 +259,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.1.8
+2023-07-14
+
+add compare database,create table method add double quote
 
 ### v0.1.7
 2023-07-11

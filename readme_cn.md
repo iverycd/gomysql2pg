@@ -122,6 +122,38 @@ time="2023-07-11T12:34:01+08:00" level=info msg="All complete totalTime 10m30.16
 
 ```
 
+### 2.4 比对数据库
+
+迁移完之后比对源库和目标库，查看是否有迁移数据失败的表
+
+`windows使用:gomysql2pg.exe --config your_file.yml compareDb`
+
+```
+e.g.
+gomysql2pg.exe --config example.yml compareDb
+
+在Linux，MacOS使用示例如下
+./gomysql2pg --config example.yml compareDb
+```
+
+```bash
+Table Compare Result (Only Not Ok Displayed)
++-----------------------+------------+----------+-------------+------+
+|Table                  |SourceRows  |DestRows  |DestIsExist  |isOk  |
++-----------------------+------------+----------+-------------+------+
+|abc_testinfo           |7458        |0         |YES          |NO    |
+|log1_qweharddiskweqaz  |0           |0         |NO           |NO    |
+|abcdef_jkiu_button     |4           |0         |YES          |NO    |
+|abcdrf_yuio            |5           |0         |YES          |NO    |
+|zzz_ss_idcard          |56639       |0         |YES          |NO    |
+|asdxz_uiop             |290497      |190497    |YES          |NO    |
+|abcd_info              |1052258     |700000    |YES          |NO    |
++-----------------------+------------+----------+-------------+------+ 
+INFO[0040] Table Compare finish elapsed time 11.307881434s 
+```
+
+
+
 
 ### 2.4 其他迁移模式
 
@@ -225,6 +257,13 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.1.8
+2023-07-14
+
+增加比对数据库，创建表、索引、外键增加双引号包围表名
+
+
 
 ### v0.1.7
 2023-07-11

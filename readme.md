@@ -176,6 +176,7 @@ gomysql2pg.exe --config example.yml
 #### 2 Custom SQL Query Migration
 
 only migrate some tables not entire database, and migrate the table structure and table data to the target database according to the custom query statement in file.yml
+
 gomysql2pg.exe  --config file.yml -s
 
 ```
@@ -187,22 +188,22 @@ gomysql2pg.exe  --config example.yml -s
 
 Create all table structure(only table metadata not row data) to  target database
 
-gomysql2pg.exe  --config file.yml -t
+gomysql2pg.exe  --config file.yml createTable -t
 
 ```
 e.g.
-gomysql2pg.exe  --config example.yml -t
+gomysql2pg.exe  --config example.yml createTable -t
 ```
 
 #### 4 Migrate the table structure of custom tables
 
 Read custom tables from yml file and create target table 
 
-gomysql2pg.exe  --config file.yml -s -t
+gomysql2pg.exe  --config file.yml createTable -s -t
 
 ```
 e.g.
-gomysql2pg.exe  --config example.yml -s -t
+gomysql2pg.exe  --config example.yml createTable -s -t
 ```
 
 
@@ -230,6 +231,7 @@ gomysql2pg.exe  --config example.yml onlyData -s
 #### 7 Migrate self increasing columns to the target sequence
 
 Only migrate MySQL's autoincrement columns to target database sequences
+
 gomysql2pg.exe  --config file.yml seqOnly
 
 ```
@@ -240,6 +242,7 @@ gomysql2pg.exe  --config example.yml seqOnly
 #### 8 Migrate index and primary key
 
 Only migrate MySQL primary keys, indexes, and other objects to the target database
+
 gomysql2pg.exe  --config file.yml idxOnly
 
 ```
@@ -259,6 +262,12 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.1.9
+2023-07-21
+
+modify compare full table result all data and readme modify
+
 
 ### v0.1.8
 2023-07-14

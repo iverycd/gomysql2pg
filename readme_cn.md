@@ -174,6 +174,7 @@ gomysql2pg.exe --config example.yml
 #### 2.4.2 自定义SQL查询迁移
 
 不迁移全库数据，只迁移部分表，根据配置文件中自定义查询语句迁移表结构和表数据到目标库
+
 gomysql2pg.exe  --config 配置文件 -s
 
 ```
@@ -185,22 +186,22 @@ gomysql2pg.exe  --config example.yml -s
 
 仅在目标库创建所有表的表结构
 
-gomysql2pg.exe  --config 配置文件 -t
+gomysql2pg.exe  --config 配置文件 createTable -t
 
 ```
 示例
-gomysql2pg.exe  --config example.yml -t
+gomysql2pg.exe  --config example.yml createTable -t
 ```
 
 #### 2.4.4 迁移自定义表的表结构
 
 仅在目标库创建自定义的表
 
-gomysql2pg.exe  --config 配置文件 -s -t
+gomysql2pg.exe  --config 配置文件 createTable -s -t
 
 ```
 示例
-gomysql2pg.exe  --config example.yml -s -t
+gomysql2pg.exe  --config example.yml createTable -s -t
 ```
 
 
@@ -228,6 +229,7 @@ gomysql2pg.exe  --config example.yml onlyData -s
 #### 2.4.7 迁移自增列到目标序列形式
 
 只迁移MySQL的自增列转换为目标数据库序列
+
 gomysql2pg.exe  --config 配置文件 seqOnly
 
 ```
@@ -238,6 +240,7 @@ gomysql2pg.exe  --config example.yml seqOnly
 #### 2.4.8 迁移索引等约束
 
 只迁移MySQL的主键、索引这类对象到目标数据库
+
 gomysql2pg.exe  --config 配置文件 idxOnly
 
 ```
@@ -257,6 +260,12 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.1.9
+2023-07-21
+
+比对功能增加全库比对结果，readme文档修改
+
 
 ### v0.1.8
 2023-07-14

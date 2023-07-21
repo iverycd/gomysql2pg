@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ver = "0.1.8"
+var ver = "0.1.9"
 
 func init() {
 	rootCmd.AddCommand(versionCmd)
@@ -43,7 +43,8 @@ func Info() {
 	color.Red("D::::::::::::DDD   B::::::::::::::::BA:::::A                 A:::::A GGG::::::GGG:::G   OO:::::::::OO   D::::::::::::DDD     ")
 	color.Red("DDDDDDDDDDDDD      BBBBBBBBBBBBBBBBBAAAAAAA                   AAAAAAA   GGGGGG   GGGG     OOOOOOOOO     DDDDDDDDDDDDD        ")
 	colorStr := color.New()
-	colorStr.Add(color.BgMagenta)
+	colorStr.Add(color.FgHiGreen)
+	colorStr.Printf("gomysql2pg\n")
 	colorStr.Printf("Powered By: DBA Team Of Infrastructure Research Center \nRelease version v" + ver)
 	time.Sleep(5 * 100 * time.Millisecond)
 	fmt.Printf("\n")

@@ -67,24 +67,35 @@ var compareDbCmd = &cobra.Command{
 		// 这里等待上面所有迁移数据的goroutine协程任务完成才会接着运行下面的主程序，如果这里不wait，上面还在迁移行数据的goroutine会被强制中断
 		wg2.Wait()
 		cost := time.Since(start)
-		// 输出比对信息
-		table, err := gotable.Create("Table", "SourceRows", "DestRows", "DestIsExist", "isOk")
+		// 输出全库数量的表
+		tableTotal, err := gotable.Create("Table", "SourceRows", "DestRows", "DestIsExist", "isOk")
+		// 输出比对信息失败的表
+		tableFailed, err := gotable.Create("Table", "SourceRows", "DestRows", "DestIsExist", "isOk")
 		if err != nil {
 			fmt.Println("Create table failed: ", err.Error())
 			return
 		}
 		for _, r := range dbRowsSlice {
 			if r[4] == "NO" {
-				_ = table.AddRow(r)
+				_ = tableFailed.AddRow(r)
 			}
+			_ = tableTotal.AddRow(r)
 		}
-		table.Align("Table", 1)
-		table.Align("SourceRows", 1)
-		table.Align("DestRows", 1)
-		table.Align("isOk", 1)
-		table.Align("DestIsExist", 1)
-		log.Print("\nTable Compare Result (Only Not Ok Displayed)\n", table)
-		log.Info("Table Compare finish elapsed time ", cost)
+		fmt.Println("Table Compare Total Result")
+		tableTotal.Align("Table", 1)
+		tableTotal.Align("SourceRows", 1)
+		tableTotal.Align("DestRows", 1)
+		tableTotal.Align("isOk", 1)
+		tableTotal.Align("DestIsExist", 1)
+		fmt.Println(tableTotal)
+		tableFailed.Align("Table", 1)
+		tableFailed.Align("SourceRows", 1)
+		tableFailed.Align("DestRows", 1)
+		tableFailed.Align("isOk", 1)
+		tableFailed.Align("DestIsExist", 1)
+		fmt.Println("Table Compare Result (Only Not Ok Displayed)")
+		fmt.Println(tableFailed)
+		fmt.Println("Table Compare finish elapsed time ", cost)
 	},
 }
 

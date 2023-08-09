@@ -263,6 +263,12 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ## change history
 
+### v0.2.0
+2023-08-09
+
+(1).Add the parameter charInLength, and only when it is true, varchar or the length of char will be used as the character length. For example, varchar (10 char) can store 10 characters instead of 10 bytes. (2).For the processing of adding geometry data types, currently the geometry type in MySQL is converted to a hexadecimal string using Golang's hex.EncodeToString function
+
+
 ### v0.1.9
 2023-07-21
 

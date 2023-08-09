@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"github.com/lib/pq"
 	"io"
@@ -421,6 +422,8 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 			} else {
 				if colType[i] == "BLOB" { //大字段类型就无需使用string函数转为字符串类型，即使用sql.RawBytes类型
 					value = colValue
+				} else if colType[i] == "GEOMETRY" { //gis类型的数据处理
+					value = hex.EncodeToString(colValue)[8:] //golang把gis类型列数据转成16进制字符串后，会在开头多出来8个0，所以下面进行截取，从第9位开始获取数据
 				} else {
 					value = string(colValue) //非大字段类型,显式使用string函数强制转换为字符串文本，否则都是字节类型文本(即sql.RawBytes)
 				}
@@ -429,7 +432,7 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 		}
 		_, err = stmt.Exec(prepareValues...) //这里Exec只传入实参，即上面prepare的CopyIn所需的参数，这里理解为把stmt所有数据先存放到buffer里面
 		if err != nil {
-			log.Error("stmt.Exec(prepareValues...) failed ", tableName, " ", err, prepareValues) // 这里是按行来的，不建议在这里输出错误信息,建议如果遇到一行错误就直接return返回
+			log.Error("stmt.Exec(prepareValues...) failed ", tableName, " ", err) // 这里是按行来的，不建议在这里输出错误信息,建议如果遇到一行错误就直接return返回
 			LogError(logDir, "errorTableData", StrVal(prepareValues), err)
 			//ch <- 1
 			// 通过外部的全局变量通道获取到迁移行数据失败的计数
@@ -444,7 +447,7 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	}
 	_, err = stmt.Exec() //把所有的buffer进行flush，一次性写入数据
 	if err != nil {
-		log.Error("prepareValues Error PG Copy Failed: ", tableName, prepareValues, err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
+		log.Error("prepareValues Error PG Copy Failed: ", tableName, " ", err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
 		// 在copy过程中异常的表，将异常信息输出到平面文件
 		LogError(logDir, "errorTableData", StrVal(prepareValues), err)
 		//ch <- 2

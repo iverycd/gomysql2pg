@@ -12,6 +12,7 @@ dest:
   password: 11111
 pageSize: 100000
 maxParallel: 30
+charInLength: false
 tables:
   test1:
     - select * from test1

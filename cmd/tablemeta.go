@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/spf13/viper"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -95,9 +97,17 @@ func (tb *Table) TableCreate(logDir string, tblName string, ch chan struct{}) {
 		case "int", "mediumint", "tinyint":
 			newTable.destType = "int"
 		case "varchar":
-			newTable.destType = "varchar(" + newTable.characterMaximumLength + ")"
+			if strings.ToUpper(viper.GetString("charInLength")) == "TRUE" {
+				newTable.destType = "varchar(" + newTable.characterMaximumLength + " char)"
+			} else {
+				newTable.destType = "varchar(" + newTable.characterMaximumLength + ")"
+			}
 		case "char":
-			newTable.destType = "char(" + newTable.characterMaximumLength + ")"
+			if strings.ToUpper(viper.GetString("charInLength")) == "TRUE" {
+				newTable.destType = "char(" + newTable.characterMaximumLength + " char)"
+			} else {
+				newTable.destType = "char(" + newTable.characterMaximumLength + ")"
+			}
 		case "text", "tinytext", "mediumtext", "longtext":
 			newTable.destType = "text"
 		case "datetime", "timestamp":

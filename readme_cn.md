@@ -261,6 +261,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ## change history
 
+### v0.2.0
+2023-08-09
+
+1.新增参数charInLength,仅当为true的时候，varchar或者char的长度作为字符长度，例如varchar(10 char)，能存10个字符而不是10个字节 2.新增geometry数据类型的处理，目前是把MySQL的geometry类型使用golang的hex.EncodeToString函数转为16进制字符串
+
 ### v0.1.9
 2023-07-21
 

@@ -1,5 +1,6 @@
 # gomysql2pg
 
+![logo.png](image/logo.png)
 ([CN](https://github.com/iverycd/gomysql2pg/blob/master/readme_cn.md))
 
 ## Features
@@ -56,6 +57,7 @@ dest:
   password: 11111
 pageSize: 100000
 maxParallel: 30
+charInLength: false
 tables:
   test1:
     - select * from test1
@@ -74,11 +76,13 @@ e.g.
 pageSize:100000
 SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOIN test t ON temp.id = t.id;
 ```
-maxParallel: The maximum number of concurrency that can run goroutine simultaneously
+- maxParallel: The maximum number of concurrency that can run goroutine simultaneously
 
-tables: Customized migrated tables and customized query source tables, indented in yml format
+- tables: Customized migrated tables and customized query source tables, indented in yml format
 
-exclude: Tables that do not migrate to target database, indented in yml format
+- exclude: Tables that do not migrate to target database, indented in yml format
+
+- charInLength: If true, varchar type stores character length instead of bytes, so it is only compatible with some databases
 
 
 ### 2 Full database migration

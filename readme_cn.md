@@ -1,5 +1,7 @@
 # gomysql2pg
 
+![logo.png](image/logo.png)
+
 ## 一、工具特性以及环境要求
 ### 1.1 功能特性
 
@@ -57,6 +59,7 @@ dest:
   password: 11111
 pageSize: 100000
 maxParallel: 30
+charInLength: false
 tables:
   test1:
     - select * from test1
@@ -75,11 +78,13 @@ e.g.
 pageSize:100000
 SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOIN test t ON temp.id = t.id;
 ```
-maxParallel: 最大能同时运行goroutine的并发数
+- maxParallel: 最大能同时运行goroutine的并发数
 
-tables: 自定义迁移的表以及自定义查询源表，按yml格式缩进
+- tables: 自定义迁移的表以及自定义查询源表，按yml格式缩进
 
-exclude: 不需要迁移的表，按yml格式缩进
+- exclude: 不需要迁移的表，按yml格式缩进
+
+- charInLength: 如果是true，varchar类型存储的是字符长度而不是字节，所以仅兼容部分数据库
 
 
 ### 2.2 全库迁移

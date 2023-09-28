@@ -190,14 +190,20 @@ func exitHandle(exitChan chan os.Signal) {
 
 // CreateDateDir 根据当前日期来创建文件夹
 func CreateDateDir(basePath string) string {
-	folderName := time.Now().Format("2006_01_02_15_04_05")
+	folderName := "log/" + time.Now().Format("2006_01_02_15_04_05")
 	folderPath := filepath.Join(basePath, folderName)
 	if _, err := os.Stat(folderPath); os.IsNotExist(err) {
 		// 必须分成两步
 		// 先创建文件夹
-		os.Mkdir(folderPath, 0777)
+		err := os.MkdirAll(folderPath, 0777) //级联创建目录
+		if err != nil {
+			fmt.Println("create directory log failed ", err)
+		}
 		// 再修改权限
-		os.Chmod(folderPath, 0777)
+		err = os.Chmod(folderPath, 0777)
+		if err != nil {
+			fmt.Println("chmod directory log failed ", err)
+		}
 	}
 	return folderPath
 }

@@ -63,7 +63,11 @@ var createTableCmd = &cobra.Command{
 		start := time.Now()
 		db = new(Table)
 		// 用于控制协程goroutine运行时候的并发数,例如3个一批，3个一批的goroutine并发运行
-		ch := make(chan struct{}, viper.GetInt("maxParallel"))
+		maxParallel := viper.GetInt("maxParallel")
+		if maxParallel == 0 {
+			maxParallel = 20
+		}
+		ch := make(chan struct{}, maxParallel)
 		//遍历tableMap
 		for tableName := range tableMap { //获取单个表名
 			ch <- struct{}{}
@@ -214,6 +218,9 @@ var onlyDataCmd = &cobra.Command{
 		//ch := make(chan int, goroutineSize)  //v0.1.4及之前的版本通道使用的通道，配合下面for循环遍历行数据迁移失败的计数
 		// 从yml配置文件中获取迁移数据时最大运行协程数
 		maxParallel := viper.GetInt("maxParallel")
+		if maxParallel == 0 {
+			maxParallel = 20
+		}
 		// 用于控制协程goroutine运行时候的并发数,例如3个一批，3个一批的goroutine并发运行
 		ch := make(chan struct{}, maxParallel)
 		// 在协程里运行函数response，主要是从下面调用协程go runMigration的时候获取到里面迁移行数据失败的数量

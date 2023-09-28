@@ -86,6 +86,7 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 
 - charInLength: If true, varchar type stores character length instead of bytes, so it is only compatible with some databases
 
+- Distributed: If it is true, the database is a distributed database such as GaussDB 8.1.3 And before adding the primary key, first change the table distribution column as the primary key, and then add the primary key.
 
 ### 2 Full database migration
 
@@ -268,6 +269,17 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.2
+2023-09-28
+
+Add bit data type convert to pg,fix some invalid unicode value like 0,fix issue bug,output invalid data to logfile.
+
+
+### v0.2.1
+2023-09-14
+
+Add new parameter `Distributed`,support Distributed database like GaussDB 8.1.3
 
 ### v0.2.0
 2023-08-09

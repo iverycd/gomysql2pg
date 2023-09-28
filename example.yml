@@ -13,6 +13,7 @@ dest:
 pageSize: 100000
 maxParallel: 30
 charInLength: false
+Distributed: false
 tables:
   test1:
     - select * from test1

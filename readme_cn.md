@@ -86,6 +86,7 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 
 - charInLength: 如果是true，varchar类型存储的是字符长度而不是字节，所以仅兼容部分数据库
 
+- Distributed: 默认为false即非分布式数据库，如果是true，数据库则为分布式数据库如GaussDB 8.1.3，在增加主键之前，先更改表分布列为主键的列，随后再增加主键
 
 ### 2.2 全库迁移
 
@@ -265,6 +266,17 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.2
+2023-09-28
+
+新增bit类型数据传输到pgsql，修复文本类型中如果带有非法Unicode字符0导致数据无法插入的问题，转储非法数据到日志文件，修复配置文件中缺少最大并发数引发的潜在bug
+
+
+### v0.2.1
+2023-09-14
+
+新增参数`Distributed`，支持分布式数据库如GaussDB 8.1.3
 
 ### v0.2.0
 2023-08-09

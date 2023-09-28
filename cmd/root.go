@@ -104,6 +104,9 @@ func mysql2pg(connStr *connect.DbConnStr) {
 	db = new(Table)
 	// 从yml配置文件中获取迁移数据时最大运行协程数
 	maxParallel := viper.GetInt("maxParallel")
+	if maxParallel == 0 {
+		maxParallel = 20
+	}
 	// 用于控制协程goroutine运行时候的并发数,例如3个一批，3个一批的goroutine并发运行
 	ch := make(chan struct{}, maxParallel)
 	startTbl := time.Now()
@@ -424,8 +427,36 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 					value = colValue
 				} else if colType[i] == "GEOMETRY" { //gis类型的数据处理
 					value = hex.EncodeToString(colValue)[8:] //golang把gis类型列数据转成16进制字符串后，会在开头多出来8个0，所以下面进行截取，从第9位开始获取数据
+				} else if colType[i] == "BIT" {
+					value = hex.EncodeToString(colValue)[1:] //mysql中获取bit类型转为16进制是00或者01,但是在pgsql中如果只需要1位类型为bit(1)，那么就从第1位后面开始截取数据
 				} else {
 					value = string(colValue) //非大字段类型,显式使用string函数强制转换为字符串文本，否则都是字节类型文本(即sql.RawBytes)
+				}
+			}
+			// 检查varchar类型的数据中是否包含Unicode中的非法字符0
+			//colNameStr := strings.ToLower(columns[i])
+			//if colNameStr == "enable" {
+			//	fmt.Println(colNameStr, colType[i], value)
+			//}
+			if colType[i] == "VARCHAR" || colType[i] == "TEXT" {
+				// 由于在varchar类型下操作，这里直接断言成字符串类型
+				newStr, _ := value.(string)
+				// 将列值转换成Unicode码值，便于在码值中发现一些非法字符
+				sliceRune := []rune(newStr)
+				// 以下是通过遍历rune类型切片数据，找出列值中包含Unicode的非法字符0
+				uniStr := 0    // 待查找的非合法的Unicode码值0
+				found := false // 如果后面遍历切片找到非法值，值为true
+				for _, val := range sliceRune {
+					if val == rune(uniStr) {
+						found = true
+						break
+					}
+				}
+				if found {
+					//log.Warning("invalid is in sliceRune ", value, columns[i])
+					LogError(logDir, "invalidTableData", "[Warning] invalid string found ! tableName:"+tableName+"     column value:["+newStr+"]      columnName:["+columns[i]+"]", err)
+					// 直接批量替换，使用\x00去除掉列值中非法的Unicode码值0
+					value = strings.Replace(string(sliceRune), "\x00", "", -1)
 				}
 			}
 			prepareValues[i] = value //把第1列的列值追加到任意类型的切片里面，然后把第2列，第n列的值加到任意类型的切片里面,这里的切片即一行完整的数据

@@ -20,6 +20,8 @@
 
 * One click migration of MySQL to postgreSQL, convenient, fast, and easy to use
 
+![gomysql2pg_en_struct.png](image/gomysql2pg_en_struct.png)
+
 
 ## Pre-requirement
 The running client PC needs to be able to connect to both the source MySQL database and the target database simultaneously
@@ -60,6 +62,7 @@ dest:
 pageSize: 100000
 maxParallel: 30
 charInLength: false
+Distributed: false
 tables:
   test1:
     - select * from test1
@@ -269,6 +272,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.3
+2023-10-18
+
+Fix MySQL Data Dictionary ORDINAL_ POSITION sorting problem
 
 ### v0.2.2
 2023-09-28

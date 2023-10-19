@@ -20,6 +20,16 @@
 - 一键迁移MySQL到postgresql，方便快捷，轻松使用
 
 
+![gomysql2pg_en_struct.png](image/gomysql2pg_en_struct.png)
+
+需要知道的是MySQL跟其他基于pgsql内核或者协议的国产数据库，无论是数据库架构还是在表结构以及列类型，自增列实现方式，函数，存储过程等多个对象存在很多差异，如果通过传统的SQL备份文件导入到目标数据库，这势必是不可取也是最没效率的一种方式
+
+通过此工具，可以降低异构数据库之间开发的人工成本，并尽可能的将MySQL绝大多数的,表结构，自增列，视图，行数据等多对象并发迁移到目标数据库，尽可能的适配目标类型，提供了全库级别，表对象级，自定义查询SQL等多种迁移方式
+
+gomysql2pg根据MySQL内部的数据字典获取到数据库各个对象的定义和属性信息，并适配到目标数据库
+
+数据迁移，本质上就是把表数据从一个数据库"搬家"到另一个数据库，其中主要涉及读表，传输，写表，而读表和写表占据迁移绝大多数时间
+
 ### 1.2 环境要求
 在运行的客户端PC需要同时能连通源端MySQL数据库以及目标数据库
 
@@ -60,6 +70,7 @@ dest:
 pageSize: 100000
 maxParallel: 30
 charInLength: false
+Distributed: false
 tables:
   test1:
     - select * from test1
@@ -86,7 +97,7 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 
 - charInLength: 如果是true，varchar类型存储的是字符长度而不是字节，所以仅兼容部分数据库
 
-- Distributed: 默认为false即非分布式数据库，如果是true，数据库则为分布式数据库如GaussDB 8.1.3，在增加主键之前，先更改表分布列为主键的列，随后再增加主键
+- Distributed: 默认为false即非分布式数据库，如果是分布式数据库就写true，如GaussDB 8.1.3，在增加主键之前，先更改表分布列为主键的列，随后再增加主键
 
 ### 2.2 全库迁移
 
@@ -266,6 +277,12 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.3
+2023-10-18
+
+修复MySQL数据字典ORDINAL_POSITION排序问题
+
 
 ### v0.2.2
 2023-09-28

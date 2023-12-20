@@ -97,10 +97,13 @@ func (tb *Table) TableCreate(logDir string, tblName string, ch chan struct{}) {
 		case "int", "mediumint", "tinyint":
 			newTable.destType = "int"
 		case "varchar":
-			if strings.ToUpper(viper.GetString("charInLength")) == "TRUE" {
+			if strings.ToUpper(viper.GetString("charInLength")) == "TRUE" { // charInLength指定后，使用varchar(100 char)这种形式
 				newTable.destType = "varchar(" + newTable.characterMaximumLength + " char)"
 			} else {
-				newTable.destType = "varchar(" + newTable.characterMaximumLength + ")"
+				newTable.destType = "varchar(" + newTable.characterMaximumLength + ")" // 常规varchar
+			}
+			if strings.ToUpper(viper.GetString("useNvarchar2")) == "TRUE" { // 一旦useNvarchar2指定后，后面都会使用nvarchar2类型，比如GaussDB支持以字符长度作为单位
+				newTable.destType = "nvarchar2(" + newTable.characterMaximumLength + ")"
 			}
 		case "char":
 			if strings.ToUpper(viper.GetString("charInLength")) == "TRUE" {

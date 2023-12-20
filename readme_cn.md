@@ -70,6 +70,7 @@ dest:
 pageSize: 100000
 maxParallel: 30
 charInLength: false
+useNvarchar2: false
 Distributed: false
 tables:
   test1:
@@ -95,7 +96,9 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 
 - exclude: 不需要迁移的表，按yml格式缩进
 
-- charInLength: 如果是true，varchar类型存储的是字符长度而不是字节，所以仅兼容部分数据库
+- charInLength: 如果是true，varchar类型存储的是字符长度而不是字节，所以仅兼容部分数据库(例如海量)
+
+- useNvarchar2: 如果是true，目标数据库使用nvarchar2类型(例如GaussDB)
 
 - Distributed: 默认为false即非分布式数据库，如果是分布式数据库就写true，如GaussDB 8.1.3，在增加主键之前，先更改表分布列为主键的列，随后再增加主键
 
@@ -278,10 +281,15 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ## change history
 
+### v0.2.4
+2023-12-20
+
+新增参数useNvarchar2使用nvarchar2类型存储以字符长度作为单位，例如华为GaussDB R3主备版本
+
 ### v0.2.3
 2023-10-18
 
-修复MySQL数据字典ORDINAL_POSITION排序问题
+修复查询MySQL数据字典ORDINAL_POSITION没有排序导致获取表结构字段顺序错乱的问题
 
 
 ### v0.2.2

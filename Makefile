@@ -1,5 +1,5 @@
 # usage
-# eg. make release VERSION=0.1.5
+# eg. make release VERSION=v0.1.5
 # Binary name
 BINARY=gomysql2pg
 # Builds the project

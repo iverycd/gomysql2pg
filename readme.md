@@ -62,6 +62,7 @@ dest:
 pageSize: 100000
 maxParallel: 30
 charInLength: false
+useNvarchar2: false
 Distributed: false
 tables:
   test1:
@@ -88,6 +89,8 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 - exclude: Tables that do not migrate to target database, indented in yml format
 
 - charInLength: If true, varchar type stores character length instead of bytes, so it is only compatible with some databases
+
+- useNvarchar2: if true，dest database use nvarchar2(like GaussDB)
 
 - Distributed: If it is true, the database is a distributed database such as GaussDB 8.1.3 And before adding the primary key, first change the table distribution column as the primary key, and then add the primary key.
 
@@ -273,10 +276,16 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ## change history
 
+
+### v0.2.4
+2023-12-20
+
+Add new parameter useNvarchar2,use nvarchar2 support storage character length of unit，like GaussDB R3 version
+
 ### v0.2.3
 2023-10-18
 
-Fix MySQL Data Dictionary ORDINAL_ POSITION sorting problem
+Fix MySQL Data Dictionary ORDINAL_POSITION sorting problem
 
 ### v0.2.2
 2023-09-28

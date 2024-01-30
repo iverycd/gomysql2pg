@@ -281,6 +281,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ## change history
 
+### v0.2.5
+2024-01-22
+
+调整MySQL的double类型适配成pg的double precision
+
 ### v0.2.4
 2023-12-20
 

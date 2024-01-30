@@ -276,6 +276,10 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ## change history
 
+### v0.2.5 
+
+modify source double transform to target double precision
+
 
 ### v0.2.4
 2023-12-20

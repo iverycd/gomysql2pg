@@ -278,7 +278,7 @@ gomysql2pg.exe  --config example.yml viewOnly
 
 ### v0.2.5 
 
-modify source double transform to target double precision
+modify source double and float transform to target double precision
 
 
 ### v0.2.4

@@ -62,6 +62,7 @@ src:
   username: root
   password: 11111
 dest:
+  dbType: Gauss # 如果使用的是openGauss类型(openGauss 5.0.2测试通过)请一定要添加此行，非openGauss类型一定要注释本行
   host: 192.168.1.200
   port: 5432
   database: test
@@ -280,6 +281,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.6
+2024-08-05
+
+新增驱动支持openGauss(openGauss 5.0.2测试通过)
 
 ### v0.2.5
 2024-01-22

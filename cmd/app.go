@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "gitee.com/opengauss/openGauss-connector-go-pq"
 	"github.com/spf13/viper"
 	"gomysql2pg/connect"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -65,6 +67,9 @@ func PrepareDest(connStr *connect.DbConnStr) {
 		destUserName, destPassword, destDatabase, destPort)
 	var err error
 	destDb, err = sql.Open("postgres", conn)
+	if strings.ToUpper(viper.GetString("dest.dbType")) == "GAUSS" {
+		destDb, err = sql.Open("opengauss", conn)
+	}
 	if err != nil {
 		log.Fatal("please check Postgres yml file", err)
 	}

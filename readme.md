@@ -54,6 +54,7 @@ src:
   username: root
   password: 11111
 dest:
+  dbType: Gauss # If you are using the openGauss type (openGauss 5.0.2 passed the test), please be sure to add this line, and for non openGauss types, please annotate this line
   host: 192.168.1.200
   port: 5432
   database: test
@@ -275,6 +276,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.6
+2024-08-05
+
+new support openGauss(openGauss 5.0.2 test passed)
 
 ### v0.2.5 
 

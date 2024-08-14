@@ -62,9 +62,12 @@ func (tb *Table) TableCreate(logDir string, tblName string, ch chan struct{}) {
 	sql := fmt.Sprintf("select concat('\"',lower(column_name),'\"'),data_type,ifnull(character_maximum_length,'null'),is_nullable,case  column_default when '( \\'user\\' )' then 'user' else ifnull(column_default,'null') end as column_default,ifnull(numeric_precision,'null'),ifnull(numeric_scale,'null'),ifnull(datetime_precision,'null'),ifnull(column_key,'null'),ifnull(column_comment,'null'),ORDINAL_POSITION from information_schema.COLUMNS where table_schema=database() and table_name='%s' order by ORDINAL_POSITION", tblName)
 	//fmt.Println(sql)
 	rows, err := srcDb.Query(sql)
+	fmt.Printf("0.create tablle '%s' \n", tblName)
+
 	if err != nil {
 		log.Error(err)
 	}
+
 	// 遍历MySQL表字段,一行就是一个字段的基本信息
 	for rows.Next() {
 		if err := rows.Scan(&newTable.columnName, &newTable.dataType, &newTable.characterMaximumLength, &newTable.isNullable, &newTable.columnDefault, &newTable.numericPrecision, &newTable.numericScale, &newTable.datetimePrecision, &newTable.columnKey, &newTable.columnComment, &newTable.ordinalPosition); err != nil {
@@ -82,9 +85,20 @@ func (tb *Table) TableCreate(logDir string, tblName string, ch chan struct{}) {
 		// 列字段default默认值的处理
 		switch {
 		case newTable.columnDefault != "null": // 默认值不是null并且是字符串类型下面就需要使用fmt.Sprintf格式化让字符串单引号包围，否则这个字符串是没有引号包围的
-			if newTable.dataType == "varchar" {
+			fmt.Printf("1.tabl='%s', '%s','%s':'%s' \n", tblName, newTable.columnName, newTable.dataType, newTable.columnDefault)
+
+			if strings.Contains(newTable.dataType, "varchar") || strings.Contains(newTable.dataType, "enum") {
+				fmt.Printf("2. '%s','%s':'%s' \n", newTable.columnName, newTable.dataType, newTable.columnDefault)
 				newTable.destDefault = fmt.Sprintf("default '%s'", newTable.columnDefault)
 			} else if newTable.dataType == "char" {
+				newTable.destDefault = fmt.Sprintf("default '%s'", newTable.columnDefault)
+			} else if newTable.dataType == "timestamp" || newTable.dataType == "datetime" {
+				if newTable.columnDefault != "CURRENT_TIMESTAMP" {
+					newTable.destDefault = fmt.Sprintf("default '%s'", newTable.columnDefault)
+				} else {
+					newTable.destDefault = fmt.Sprintf("default %s", newTable.columnDefault)
+				}
+			} else if newTable.dataType == "date" {
 				newTable.destDefault = fmt.Sprintf("default '%s'", newTable.columnDefault)
 			} else {
 				newTable.destDefault = fmt.Sprintf("default %s", newTable.columnDefault) // 非字符串类型无需使用单引号包围
@@ -96,6 +110,9 @@ func (tb *Table) TableCreate(logDir string, tblName string, ch chan struct{}) {
 		switch newTable.dataType {
 		case "int", "mediumint", "tinyint":
 			newTable.destType = "int"
+		/// CHANGE: enum 2 varchar
+		case "enum":
+			newTable.destType = "varchar"
 		case "varchar":
 			if strings.ToUpper(viper.GetString("charInLength")) == "TRUE" { // charInLength指定后，使用varchar(100 char)这种形式
 				newTable.destType = "varchar(" + newTable.characterMaximumLength + " char)"
@@ -201,9 +218,18 @@ func (tb *Table) IdxCreate(logDir string) (result []string) {
 	startTime := time.Now()
 	failedCount := 0
 	id := 0
+
+	initNo_ONLY_FULL_GROUP_BY_sql := "SET GLOBAL sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));"
+	_, err2 := srcDb.Query(initNo_ONLY_FULL_GROUP_BY_sql)
+	if err2 != nil {
+		log.Error(err2)
+	}
+
 	// 查询MySQL索引、主键、唯一约束等信息，批量生成创建语句
+	// sql := fmt.Sprintf("SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE \"', TABLE_NAME, '\" ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON \"', table_name, '\"(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' \"', table_name, '\"' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text,INDEX_NAME,concat('alter table \"',table_name,'\"',' DISTRIBUTE BY hash ','(',GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ),');') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;")
 	sql := fmt.Sprintf("SELECT IF ( INDEX_NAME = 'PRIMARY', CONCAT( 'ALTER TABLE \"', TABLE_NAME, '\" ', 'ADD ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( 'INDEX ', INDEX_NAME, '' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( 'UNIQUE INDEX ', INDEX_NAME ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), IF ( UPPER( INDEX_NAME ) != 'PRIMARY' AND non_unique = 0,CONCAT( 'CREATE UNIQUE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON \"', table_name, '\"(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ),REPLACE ( REPLACE ( CONCAT( 'CREATE INDEX ', index_name, '_', substr( uuid(), 1, 8 ), substr( MD5( RAND()), 1, 3 ), ' ON ', IF ( NON_UNIQUE = 1, CASE UPPER( INDEX_TYPE ) WHEN 'FULLTEXT' THEN 'FULLTEXT INDEX' WHEN 'SPATIAL' THEN 'SPATIAL INDEX' ELSE CONCAT( ' \"', table_name, '\"' ) END, IF ( UPPER( INDEX_NAME ) = 'PRIMARY', CONCAT( 'PRIMARY KEY ' ), CONCAT( table_name, ' xxx' ) ) ), '(', GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ), ');' ), CHAR ( 13 ), '' ), CHAR ( 10 ), '' ) ) ) sql_text,INDEX_NAME,concat('alter table \"',table_name,'\"',' DISTRIBUTE BY hash ','(',GROUP_CONCAT( DISTINCT CONCAT( '', COLUMN_NAME, '' ) ORDER BY SEQ_IN_INDEX ASC SEPARATOR ', ' ),');') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA IN ( SELECT DATABASE()) GROUP BY TABLE_NAME, INDEX_NAME ORDER BY TABLE_NAME ASC, INDEX_NAME ASC;")
-	//fmt.Println(sql)
+
+	fmt.Println("ERROR 查询MySQL索引、主键、唯一约束等信息，批量生成创建语句:\n", sql)
 	rows, err := srcDb.Query(sql)
 	if err != nil {
 		log.Error(err)

@@ -459,6 +459,18 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 					value = strings.Replace(string(sliceRune), "\x00", "", -1)
 				}
 			}
+			if colType[i] == "TIMESTAMP" || colType[i] == "DATETIME" {
+				newStr, _ := value.(string)
+				if newStr == "0000-00-00 00:00:00" {
+					value = "2000-01-01 01:01:01"
+				}
+			}
+			if colType[i] == "DATE" {
+				newStr, _ := value.(string)
+				if newStr == "0000-00-00" {
+					value = "2000-01-01"
+				}
+			}
 			prepareValues[i] = value //把第1列的列值追加到任意类型的切片里面，然后把第2列，第n列的值加到任意类型的切片里面,这里的切片即一行完整的数据
 		}
 		_, err = stmt.Exec(prepareValues...) //这里Exec只传入实参，即上面prepare的CopyIn所需的参数，这里理解为把stmt所有数据先存放到buffer里面

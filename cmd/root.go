@@ -173,7 +173,7 @@ func mysql2pg(connStr *connect.DbConnStr) {
 		// 创建序列
 		seqRet := db.SeqCreate(logDir)
 		// 创建索引、约束
-		idxRet := db.IdxCreate(logDir)
+		idxRet := db.IdxCreate(logDir, excludeTab)
 		// 创建外键
 		fkRet := db.FKCreate(logDir)
 		// 创建视图
@@ -225,19 +225,28 @@ func fetchTableMap(pageSize int, excludeTable []string) (tableMap map[string][]s
 	log.Info("exclude table ", excludeTable)
 	// 如果配置文件中exclude存在表名，使用not in排除掉这些表，否则获取到所有表名
 	if excludeTable != nil {
-		sqlStr = "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE' and table_name not in ("
+		//sqlStr = "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE' and table_name not in ("
+		sqlStr = "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE'"
 		buffer := bytes.NewBufferString("")
-		for index, tabName := range excludeTable {
-			if index < len(excludeTable)-1 {
-				buffer.WriteString("'" + tabName + "'" + ",")
+		for _, tabName := range excludeTable {
+			//if index < len(excludeTable)-1 {
+			//	buffer.WriteString("'" + tabName + "'" + ",")
+			//} else {
+			//	buffer.WriteString("'" + tabName + "'" + ")")
+			//}
+			tabName = strings.ReplaceAll(tabName, "\"", "")
+			if strings.Contains(tabName, "*") {
+				tabName = strings.ReplaceAll(tabName, "*", "%")
+				buffer.WriteString(" and table_name not like " + "'" + tabName + "'" + " ")
 			} else {
-				buffer.WriteString("'" + tabName + "'" + ")")
+				buffer.WriteString(" and table_name not like " + "'" + tabName + "'" + " ")
 			}
 		}
 		sqlStr += buffer.String()
 	} else {
 		sqlStr = "select table_name from information_schema.tables where table_schema=database() and table_type='BASE TABLE';" // 获取库里全表名称
 	}
+	fmt.Println(sqlStr)
 	// 查询下源库总共的表，获取到表名
 	rows, err := srcDb.Query(sqlStr)
 	defer rows.Close()
@@ -464,6 +473,7 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 		_, err = stmt.Exec(prepareValues...) //这里Exec只传入实参，即上面prepare的CopyIn所需的参数，这里理解为把stmt所有数据先存放到buffer里面
 		if err != nil {
 			log.Error("stmt.Exec(prepareValues...) failed ", tableName, " ", err) // 这里是按行来的，不建议在这里输出错误信息,建议如果遇到一行错误就直接return返回
+			LogAlterSql(logDir, "failedTable", tableName)
 			LogError(logDir, "errorTableData", StrVal(prepareValues), err)
 			//ch <- 1
 			// 通过外部的全局变量通道获取到迁移行数据失败的计数
@@ -479,6 +489,7 @@ func runMigration(logDir string, startPage int, tableName string, sqlStr string,
 	_, err = stmt.Exec() //把所有的buffer进行flush，一次性写入数据
 	if err != nil {
 		log.Error("prepareValues Error PG Copy Failed: ", tableName, " ", err) //注意这里不能使用Fatal，否则会直接退出程序，也就没法遇到错误继续了
+		LogAlterSql(logDir, "failedTable", tableName)
 		// 在copy过程中异常的表，将异常信息输出到平面文件
 		LogError(logDir, "errorTableData", StrVal(prepareValues), err)
 		//ch <- 2

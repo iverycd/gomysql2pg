@@ -102,6 +102,28 @@ func LogError(logDir string, logName string, strContent string, errInfo error) {
 	}
 }
 
+func LogAlterSql(logDir string, logName string, strContent string) {
+	f, file := os.OpenFile(logDir+"/"+logName+".log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
+	if file != nil {
+		log.Fatal(file)
+	}
+	defer func() {
+		if errFile := f.Close(); errFile != nil {
+			log.Fatal(errFile) // 或设置到函数返回值中
+		}
+	}()
+	// create new buffer
+	buffer := bufio.NewWriter(f)
+	_, file = buffer.WriteString(strContent + "\n")
+	if file != nil {
+		log.Fatal(file)
+	}
+	// flush buffered data to the file
+	if errFile := buffer.Flush(); errFile != nil {
+		log.Fatal(errFile)
+	}
+}
+
 // StrVal
 // 获取变量的字符串值，目前用于interface类型转成字符串类型
 // 浮点型 3.0将会转换成字符串3, "3"

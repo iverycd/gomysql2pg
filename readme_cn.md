@@ -79,9 +79,9 @@ tables:
   test2:
     - select * from test2
 exclude:
-  operalog1
-  operalog2
-  operalog3
+  - 'log1'
+  - 'log2'
+  - '*_log'
 
 ```
 
@@ -95,7 +95,7 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 
 - tables: 自定义迁移的表以及自定义查询源表，按yml格式缩进
 
-- exclude: 不需要迁移的表，按yml格式缩进
+- exclude: 不需要迁移的表，按yml格式缩进，目前新增支持通配符星号(\*)，例如test*
 
 - charInLength: 如果是true，varchar类型存储的是字符长度而不是字节，所以仅兼容部分数据库(例如海量)
 
@@ -104,6 +104,13 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 - Distributed: 默认为false即非分布式数据库，如果是分布式数据库就写true，如GaussDB 8.1.3，在增加主键之前，先更改表分布列为主键的列，随后再增加主键
 
 ### 2.2 全库迁移
+
+>`注意:` 如果目标数据库是opengauss或者是GaussDB，有2种方案可以让类型varchar按字符作为长度(即跟MySQL一样)
+>> 方案1:调整配置文件`example.yml`,确保useNvarchar2字段值为true，这将在目标数据库使用nvarchar2类型(gauss系列此类型支持按字符长度存储而不是字节)
+> 
+>> 方案2:创建数据库指定兼容模式为MySQL或者PG，例如create database test owner test DBCOMPATIBILITY='B'或者create database test owner test DBCOMPATIBILITY='PG'
+
+
 
 迁移全库表结构、行数据，视图、索引约束、自增列等对象
 
@@ -281,6 +288,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.7
+2024-09-23
+
+新增通配符排除表，转储失败的表名到单独的日志`failedTable.log`
 
 ### v0.2.6
 2024-08-05

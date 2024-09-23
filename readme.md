@@ -71,9 +71,9 @@ tables:
   test2:
     - select * from test2
 exclude:
-  operalog1
-  operalog2
-  operalog3
+  - 'log1'
+  - 'log2'
+  - '*_log'
 
 ```
 
@@ -87,7 +87,7 @@ SELECT t.* FROM (SELECT id FROM test  ORDER BY id LIMIT 0, 100000) temp LEFT JOI
 
 - tables: Customized migrated tables and customized query source tables, indented in yml format
 
-- exclude: Tables that do not migrate to target database, indented in yml format
+- exclude: Tables that do not migrate to target database, indented in yml format,Currently, there is new support for wildcard asterisk (\*), such as test*
 
 - charInLength: If true, varchar type stores character length instead of bytes, so it is only compatible with some databases
 
@@ -276,6 +276,11 @@ gomysql2pg.exe  --config example.yml viewOnly
 ```
 
 ## change history
+
+### v0.2.7
+2024-09-23
+
+Add wildcard exclusion table and dump failed table names to a separate log `failedTable.log`
 
 ### v0.2.6
 2024-08-05

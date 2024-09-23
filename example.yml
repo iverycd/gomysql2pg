@@ -21,6 +21,6 @@ tables:
   test2:
     - select * from test2
 exclude:
-  operalog1
-  operalog2
-  operalog3
+  - 'log1'
+  - 'log2'
+  - '*_cswysk'

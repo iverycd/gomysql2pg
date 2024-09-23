@@ -121,6 +121,8 @@ var idxOnlyCmd = &cobra.Command{
 		connStr := getConn()
 		PrepareSrc(connStr)
 		PrepareDest(connStr)
+		// 从配置文件中获取需要排除的表
+		excludeTab := viper.GetStringSlice("exclude")
 		// 创建运行日志目录
 		logDir, _ := filepath.Abs(CreateDateDir(""))
 		f, err := os.OpenFile(logDir+"/"+"run.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
@@ -138,7 +140,7 @@ var idxOnlyCmd = &cobra.Command{
 		// 实例初始化，调用接口中创建目标表的方法
 		var db Database
 		db = new(Table)
-		db.IdxCreate(logDir)
+		db.IdxCreate(logDir, excludeTab)
 	},
 }
 

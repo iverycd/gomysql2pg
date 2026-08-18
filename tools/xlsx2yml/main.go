@@ -5,13 +5,14 @@
 //
 //	go run ./tools/xlsx2yml [-f configs/example.xlsx] [-o configs] \
 //	    [--sheet NAME] [--schema-mapping] [--overwrite] \
-//	    [-y] [--gauss=true|false] [--page-size N] [--max-parallel N] \
+//	    [-y] [--gauss=true|false] [--highgo=true|false] [--page-size N] [--max-parallel N] \
 //	    [--char-in-length=false] [--use-nvarchar2=true] [--distributed=false]
 //
-// Without -y, the tool interactively prompts whether dest.dbType is Gauss, then
-// pageSize, maxParallel, charInLength, useNvarchar2, Distributed, and applies
-// them to all generated files. When the answer to "is Gauss?" is no, the
-// generated YAML omits the dbType line entirely.
+// Without -y, the tool interactively prompts whether dest.dbType is Gauss,
+// then whether it is Highgo, then pageSize, maxParallel, charInLength,
+// useNvarchar2, Distributed, and applies them to all generated files. When
+// the answers to both "is Gauss?" and "is Highgo?" are no, the generated
+// YAML omits the dbType line entirely.
 package main
 
 import (
@@ -35,6 +36,7 @@ type row struct {
 
 type genOpts struct {
 	isGauss      bool
+	isHighgo     bool
 	pageSize     int
 	maxParallel  int
 	charInLength bool
@@ -67,6 +69,7 @@ func main() {
 	flag.BoolVar(&yes, "yes", false, "non-interactive: use flag/default values without prompting")
 	flag.BoolVar(&yes, "y", false, "non-interactive (shorthand)")
 	flag.BoolVar(&opts.isGauss, "gauss", false, "whether dest.dbType is Gauss; if false, the dbType line is omitted")
+	flag.BoolVar(&opts.isHighgo, "highgo", false, "whether dest.dbType is Highgo; if false, the dbType line is omitted")
 	flag.IntVar(&opts.pageSize, "page-size", 100000, "pageSize")
 	flag.IntVar(&opts.maxParallel, "max-parallel", 32, "maxParallel")
 	flag.BoolVar(&opts.charInLength, "char-in-length", false, "charInLength")
@@ -95,8 +98,8 @@ func main() {
 	if err := validateOpts(&opts); err != nil {
 		die(err, 2)
 	}
-	fmt.Printf("applying to %d file(s): gauss=%t pageSize=%d maxParallel=%d charInLength=%t useNvarchar2=%t Distributed=%t\n",
-		len(rows), opts.isGauss, opts.pageSize, opts.maxParallel, opts.charInLength, opts.useNvarchar2, opts.distributed)
+	fmt.Printf("applying to %d file(s): gauss=%t highgo=%t pageSize=%d maxParallel=%d charInLength=%t useNvarchar2=%t Distributed=%t\n",
+		len(rows), opts.isGauss, opts.isHighgo, opts.pageSize, opts.maxParallel, opts.charInLength, opts.useNvarchar2, opts.distributed)
 
 	gen := 0
 	for i, r := range rows {
@@ -238,6 +241,8 @@ func writeYML(path string, r row, mapping bool, opts genOpts) error {
 	fmt.Fprintf(f, "dest:\n")
 	if opts.isGauss {
 		fmt.Fprintf(f, "  dbType: Gauss\n")
+	} else if opts.isHighgo {
+		fmt.Fprintf(f, "  dbType: Highgo\n")
 	}
 	fmt.Fprintf(f, "  host: %s\n", r.dstHost)
 	fmt.Fprintf(f, "  port: %s\n", r.dstPort)
@@ -296,6 +301,12 @@ func promptOpts(defaults genOpts, nRows int, in io.Reader, out io.Writer) (genOp
 		return o, err
 	}
 	o.isGauss = g
+
+	h, err := askBool(br, out, "dest.dbType is Highgo?", o.isHighgo)
+	if err != nil {
+		return o, err
+	}
+	o.isHighgo = h
 
 	ps, err := askInt(br, out, "pageSize", o.pageSize)
 	if err != nil {

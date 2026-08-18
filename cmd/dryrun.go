@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gomysql2pg/connect"
+	_ "gomysql2pg/internal/highgopq"
 )
 
 func init() {
@@ -50,6 +51,8 @@ func runDryRun(connStr *connect.DbConnStr) int {
 	destDriver := "postgres"
 	if strings.ToUpper(viper.GetString("dest.dbType")) == "GAUSS" {
 		destDriver = "opengauss"
+	} else if strings.ToUpper(viper.GetString("dest.dbType")) == "HIGHGO" {
+		destDriver = "highgo"
 	}
 
 	results := make([]dryRunResult, 0, 3)

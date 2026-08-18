@@ -8,6 +8,7 @@ import (
 	_ "gitee.com/opengauss/openGauss-connector-go-pq"
 	"github.com/spf13/viper"
 	"gomysql2pg/connect"
+	_ "gomysql2pg/internal/highgopq"
 	"io"
 	"os"
 	"path/filepath"
@@ -70,6 +71,8 @@ func PrepareDest(connStr *connect.DbConnStr) {
 	destDb, err = sql.Open("postgres", conn)
 	if strings.ToUpper(viper.GetString("dest.dbType")) == "GAUSS" {
 		destDb, err = sql.Open("opengauss", conn)
+	} else if strings.ToUpper(viper.GetString("dest.dbType")) == "HIGHGO" {
+		destDb, err = sql.Open("highgo", conn)
 	}
 	if err != nil {
 		log.Fatal("please check Postgres yml file", err)

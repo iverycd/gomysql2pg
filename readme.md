@@ -8,7 +8,7 @@
 
 ### 1.1 Features
 
-One-click migration from `MySQL` to `PostgreSQL`-kernel databases, including `PostgreSQL`, `Vastbase`, `Huawei GaussDB`, `TelePG`, `Kingbase V8R6`, and more.
+One-click migration from `MySQL` to `PostgreSQL`-kernel databases, including `PostgreSQL`, `Vastbase`, `Huawei GaussDB`, `TelePG`, `Kingbase V8R6`, `HighGo`, and more.
 
 - No cumbersome deployment — ready to use out of the box, compact and lightweight
 - Batch migration of multiple database pairs (e.g. 100 source-destination pairs) in a single run
@@ -62,7 +62,7 @@ src:
   username: root
   password: 11111
 dest:
-  dbType: Gauss # Add this line only when using openGauss or GaussDB; comment it out for all other database types
+  dbType: Gauss # Add this line only when using openGauss, GaussDB, or HighGo (values: Gauss / Highgo); comment it out for all other database types
   host: 192.168.1.200
   port: 5432
   database: test

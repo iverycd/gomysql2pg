@@ -6,7 +6,7 @@
 
 ### 1.1 功能特性
 
-支持 `MySQL` 数据库一键迁移到 `PostgreSQL` 内核类型的目标数据库，如 `PostgreSQL`、`海量数据库 Vastbase`、`华为 GaussDB`、`电信 TelePG`、`人大金仓 Kingbase V8R6` 等。
+支持 `MySQL` 数据库一键迁移到 `PostgreSQL` 内核类型的目标数据库，如 `PostgreSQL`、`海量数据库 Vastbase`、`华为 GaussDB`、`电信 TelePG`、`人大金仓 Kingbase V8R6`、`华高数据库 HighGo` 等。
 
 - 无需繁琐部署，开箱即用，小巧轻量化
 - 支持批量迁移多对数据库，比如100对数据库
@@ -62,7 +62,7 @@ src:
   username: root
   password: 11111
 dest:
-  dbType: Gauss # 如果使用的是 openGauss或者GaussDB 类型请一定要添加此行，非 openGauss或者GaussDB 类型一定要注释本行
+  dbType: Gauss # 如果使用的是 openGauss、GaussDB 或 HighGo 类型请一定要添加此行（取值为 Gauss 或 Highgo），其他类型一定要注释本行
   host: 192.168.1.200
   port: 5432
   database: test
